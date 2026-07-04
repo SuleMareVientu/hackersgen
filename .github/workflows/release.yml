@@ -1,0 +1,556 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+
+# Only one release at a time
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # ── 1. Publish Android library to Maven Central ────────────────────────────
+  publish-library:
+    name: Publish to Maven Central
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/setup-gradle
+
+      - name: Check if version already published
+        id: check-maven
+        run: |
+          # Maven Central artifacts are immutable — re-publishing the same
+          # version always fails with `Component … already exists`. The npm
+          # publish jobs below skip-if-published; mirror that here so a
+          # workflow_dispatch retry after a partial failure (e.g. an npm
+          # job blew up but Maven succeeded) doesn't leave Create GitHub
+          # Release stuck. Closes FU10 (#1003 follow-up).
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            VERSION=$(grep '^VERSION_NAME=' gradle.properties | cut -d= -f2)
+          else
+            VERSION=${GITHUB_REF_NAME#v}
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          # HEAD against the published .pom — 200 means already on Central.
+          STATUS=$(curl -sI -o /dev/null -w "%{http_code}" \
+            "https://repo1.maven.org/maven2/io/github/sceneview/sceneview/${VERSION}/sceneview-${VERSION}.pom")
+          if [ "$STATUS" = "200" ]; then
+            echo "::notice::sceneview ${VERSION} already on Maven Central — skipping publish"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Publishing sceneview ${VERSION} (HTTP ${STATUS} on Central probe)"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish
+        if: steps.check-maven.outputs.skip != 'true'
+        run: ./gradlew publishAndReleaseToMavenCentral --no-daemon --no-parallel --no-configuration-cache
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.SONATYPE_NEXUS_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.SONATYPE_NEXUS_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.SIGNING_KEY_ID }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_KEY_PASSWORD }}
+
+  # ── 2. Build and publish Dokka API docs ────────────────────────────────────
+  publish-api-docs:
+    name: Publish API docs
+    runs-on: ubuntu-latest
+    # Headroom for the worst case: 3 Dokka retry attempts × `timeout_minutes:
+    # 10` (#1127) + checkout/setup-gradle + the gh-pages deploy step (#1252).
+    # The previous 15 would have killed the job mid-retry before the wrapper
+    # could exhaust its 3 attempts.
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    # Cross-workflow serialisation (#1417). This job and docs.yml's `deploy`
+    # job both push to the external `sceneview/sceneview.github.io` repo. On a
+    # release tag both workflows fire concurrently and the second push is
+    # rejected (non-fast-forward). A job-level `concurrency` group is shared
+    # ACROSS workflows when the group name matches, so this MUST stay identical
+    # to the group in docs.yml's `deploy` job. `cancel-in-progress: false` —
+    # the API-docs deploy must always complete, never be cancelled mid-push.
+    concurrency:
+      group: sceneview-github-io-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/setup-gradle
+
+      - name: Generate Dokka docs
+        # `--no-configuration-cache` works around a Dokka 1.x + Gradle config
+        # cache deserialization crash on `FactoryNamedDomainObjectContainer
+        # dokkaSourceSets` (release.yml run 25870464897 at v4.3.0 cut, see
+        # #1150). The base `setup-gradle` action enables the config cache
+        # globally for incremental builds, but Dokka can't serialize its
+        # source-set container — pin this single step out of the cache.
+        #
+        # Wrapped in nick-fields/retry@v4 so transient 503s from
+        # `repo.maven.apache.org` during Dokka's dependency resolution don't
+        # block the whole release. A genuine Dokka failure still surfaces
+        # after 3 attempts; a network flake survives. See #1127.
+        #
+        # No `continue-on-error`/`|| echo` swallow — `create-release` runs
+        # independently now (#1150 decoupled the Dokka veto) but a Dokka
+        # failure should still surface as a workflow red X, not silently
+        # produce a release with no API docs.
+        uses: nick-fields/retry@v4
+        with:
+          max_attempts: 3
+          timeout_minutes: 10
+          retry_on: error
+          # Dokka 2.2.0 (bumped in gradle/libs.versions.toml#L59) removed V1
+          # mode. The V1 task `dokkaHtml` now errors with "Cannot run Dokka
+          # V1 tasks when V2 mode is enabled" — observed on v4.3.3, v4.3.4,
+          # v4.3.5 releases. V2 equivalent is `dokkaGenerateHtml`. Output
+          # path is unchanged (`build/dokka/html/`).
+          command: ./gradlew :sceneview:dokkaGenerateHtml :arsceneview:dokkaGenerateHtml --no-configuration-cache
+
+      # NOTE: there is intentionally NO `upload-artifact` for the Dokka
+      # output here. `docs.yml` consumes it via `download-artifact`, but
+      # `download-artifact` only resolves artifacts produced *within the
+      # same workflow run* — release.yml and docs.yml are separate runs,
+      # so the upload was dead weight. release.yml publishes the API docs
+      # itself in the gh-pages deploy steps below; on a docs-only run the
+      # `Preserve already-published Dokka API docs` step in docs.yml pulls
+      # `/api/` straight from the live site. See #1500.
+
+      # Arrange the just-generated Dokka HTML under a versioned tree so the
+      # gh-pages deploy below publishes it to a stable, browseable URL.
+      # Layout written into ./aggregated-dokka/ :
+      #   <version>/sceneview/index.html      ← :sceneview module API
+      #   <version>/arsceneview/index.html    ← :arsceneview module API
+      #   latest/sceneview/index.html         ← copy of the just-tagged version
+      #   latest/arsceneview/index.html
+      # Combined with `destination_dir: api/sceneview` + `keep_files: true`
+      # in the deploy step, this produces:
+      #   sceneview.github.io/api/sceneview/<version>/sceneview/
+      #   sceneview.github.io/api/sceneview/latest/sceneview/
+      # See #1252.
+      - name: Arrange Dokka HTML for gh-pages
+        id: arrange-dokka
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            VERSION=$(grep '^VERSION_NAME=' gradle.properties | cut -d= -f2)
+          else
+            VERSION=${GITHUB_REF_NAME#v}
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          # Dokka V2 (`dokkaGenerateHtml`) writes to `<module>/build/dokka/html/`.
+          SCENEVIEW_HTML="sceneview/build/dokka/html"
+          ARSCENEVIEW_HTML="arsceneview/build/dokka/html"
+          if [ ! -f "$SCENEVIEW_HTML/index.html" ] || [ ! -f "$ARSCENEVIEW_HTML/index.html" ]; then
+            echo "::error::Dokka HTML missing — expected $SCENEVIEW_HTML/index.html and $ARSCENEVIEW_HTML/index.html"
+            exit 1
+          fi
+          for slot in "$VERSION" latest; do
+            mkdir -p "aggregated-dokka/$slot/sceneview" "aggregated-dokka/$slot/arsceneview"
+            cp -r "$SCENEVIEW_HTML/." "aggregated-dokka/$slot/sceneview/"
+            cp -r "$ARSCENEVIEW_HTML/." "aggregated-dokka/$slot/arsceneview/"
+          done
+          echo "Arranged Dokka HTML for v$VERSION (+ latest/) under aggregated-dokka/"
+          find aggregated-dokka -maxdepth 2 -type d | sort
+
+      # Publish the versioned Dokka tree to the marketing-site repo
+      # `sceneview/sceneview.github.io` so `sceneview.github.io/api/sceneview/*`
+      # finally serves a browseable API reference (was 404 since v4.3.3).
+      #
+      # Auth: SSH `deploy_key` (secrets.PAGES_DEPLOY_KEY) — the SAME deploy key
+      # `docs.yml` already uses for the cross-repo Pages push, so no
+      # new secret is required.
+      #
+      # `keep_files: true` is critical: the target repo also hosts the
+      # marketing site + docs (deployed by docs.yml) and previously-released
+      # API versions — without it, actions-gh-pages would wipe everything not
+      # in `publish_dir`. With `destination_dir: api/sceneview`, only that
+      # subtree is touched; the site root and other `/api/sceneview/<ver>/`
+      # folders are preserved across deploys.
+      #
+      # Only runs on real tag pushes — on workflow_dispatch the working tree
+      # may not match a published tag, so we skip to avoid mislabelling
+      # `latest/`.
+      - name: Deploy Dokka to sceneview.github.io
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          deploy_key: ${{ secrets.PAGES_DEPLOY_KEY }}
+          external_repository: sceneview/sceneview.github.io
+          publish_branch: main
+          publish_dir: ./aggregated-dokka
+          destination_dir: api/sceneview
+          keep_files: true
+          commit_message: "deploy: API docs for ${{ github.ref_name }}"
+          user_name: github-actions[bot]
+          user_email: github-actions[bot]@users.noreply.github.com
+
+      # The SSH deploy-key push above does NOT trigger GitHub Pages' legacy
+      # auto-build (bot/deploy-key pushes are deliberately skipped to avoid
+      # recursive automation). Without this step a release lands fresh
+      # `/api/` docs on `sceneview.github.io` that the live site never
+      # rebuilds — the same drift class as #1826. Force a build via the
+      # Pages REST API. Mirrors the step in `docs.yml`.
+      # NOTE: the `secrets` context is NOT allowed in a step `if:` expression
+      # (only `github`, `env`, `steps`, `inputs`, etc. are). Referencing
+      # `secrets.*` here makes the WHOLE workflow file invalid
+      # ("Unrecognized named-value: 'secrets'") and every release run fails
+      # at startup with 0 jobs. The token check is therefore done inside the
+      # `run:` script via `$PAGES_TOKEN` instead.
+      - name: Trigger GitHub Pages build (legacy auto-build skips bot pushes)
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        env:
+          PAGES_TOKEN: ${{ secrets.PAGES_REBUILD_TOKEN || secrets.PERSONAL_TOKEN }}
+        run: |
+          if [ -z "$PAGES_TOKEN" ]; then
+            echo "::warning::No Pages rebuild token configured — skipping."
+            exit 0
+          fi
+          echo "Requesting a GitHub Pages build for sceneview/sceneview.github.io..."
+          HTTP=$(curl -sS -o /tmp/pages-build.json -w '%{http_code}' -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $PAGES_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/sceneview/sceneview.github.io/pages/builds)
+          echo "Pages build request HTTP $HTTP"
+          head -c 400 /tmp/pages-build.json || true
+          echo
+          if [ "$HTTP" != "201" ]; then
+            # NON-fatal (#2014): the Dokka deploy above already pushed the new
+            # docs to sceneview.github.io — a failed Pages-REBUILD trigger
+            # must never red-light a release whose artifacts all published.
+            # A dead/expired PAGES_REBUILD_TOKEN PAT surfaces as a loud
+            # warning; renew the secret per #2014 to restore auto-rebuild.
+            echo "::warning::Pages build request failed (HTTP $HTTP) — see #1826/#2014."
+            echo "::warning::Release is unaffected; sceneview.github.io /api docs may"
+            echo "::warning::show a stale version until PAGES_REBUILD_TOKEN is renewed."
+            exit 0
+          fi
+          echo "Pages build queued — sceneview.github.io will rebuild shortly."
+
+  # ── 3. Publish MCP to npm ──────────────────────────────────────────────────
+  publish-mcp:
+    name: Publish MCP to npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/setup-mcp
+        with:
+          registry-url: https://registry.npmjs.org
+
+      - name: Check if version already published
+        id: check-mcp
+        working-directory: mcp
+        run: |
+          # MCP has its own version cycle — always use package.json version
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          # Check the *specific* version rather than the latest dist-tag.
+          # npm view <pkg>@<ver> version returns the version string if it exists,
+          # or exits non-zero / returns empty if it has never been published.
+          PUBLISHED=$(npm view "sceneview-mcp@$VERSION" version 2>/dev/null || echo "")
+          if [ "$PUBLISHED" = "$VERSION" ]; then
+            echo "::notice::sceneview-mcp@$VERSION already published — skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Publishing sceneview-mcp@$VERSION (not yet on npm)"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build
+        if: steps.check-mcp.outputs.skip != 'true'
+        working-directory: mcp
+        run: npm run prepare
+
+      - name: Test
+        if: steps.check-mcp.outputs.skip != 'true'
+        working-directory: mcp
+        run: npm test
+
+      - name: Publish
+        if: steps.check-mcp.outputs.skip != 'true'
+        working-directory: mcp
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # ── 4. Publish sceneview-web to npm ────────────────────────────────────────
+  publish-web:
+    name: Publish sceneview-web to npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/setup-gradle
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Check if version already published
+        id: check-web
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            VERSION=$(node -p "require('./sceneview-web/package.json').version" 2>/dev/null || echo "0.0.0")
+          else
+            VERSION=${GITHUB_REF_NAME#v}
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          # Check the *specific* version rather than the latest dist-tag.
+          # npm view <pkg>@<ver> version returns the version string if it exists,
+          # or exits non-zero / returns empty if it has never been published.
+          PUBLISHED=$(npm view "sceneview-web@$VERSION" version 2>/dev/null || echo "")
+          if [ "$PUBLISHED" = "$VERSION" ]; then
+            echo "::notice::sceneview-web@$VERSION already published — skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Publishing sceneview-web@$VERSION (not yet on npm)"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build sceneview-web JS library
+        if: steps.check-web.outputs.skip != 'true'
+        run: ./gradlew :sceneview-web:jsBrowserProductionWebpack
+
+      - name: Prepare and publish npm package
+        if: steps.check-web.outputs.skip != 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          VERSION="${{ steps.check-web.outputs.version }}"
+          BUILD_DIR="sceneview-web/build/kotlin-webpack/js/productionExecutable"
+          # Hand-written TypeScript declarations — Kotlin/JS 2.x doesn't emit
+          # a `.d.ts` from `@JsExport` by default and the API surface is small
+          # enough that a hand-maintained file is cheaper than wiring
+          # dtsGenerator. See #946.
+          cp sceneview-web/sceneview-web.d.ts "$BUILD_DIR/sceneview-web.d.ts"
+          cat > "$BUILD_DIR/package.json" << EOF
+          {
+            "name": "sceneview-web",
+            "version": "$VERSION",
+            "description": "SceneView for Web — 3D rendering with Filament.js (WebGL2/WASM)",
+            "main": "sceneview-web.js",
+            "types": "sceneview-web.d.ts",
+            "keywords": ["3d", "webgl", "filament", "sceneview", "gltf", "wasm"],
+            "homepage": "https://github.com/sceneview/sceneview",
+            "repository": {
+              "type": "git",
+              "url": "https://github.com/sceneview/sceneview.git",
+              "directory": "sceneview-web"
+            },
+            "license": "Apache-2.0"
+          }
+          EOF
+          cd "$BUILD_DIR"
+          npm publish --access public
+
+  # ── 4b. Publish React Native bindings to npm ──────────────────────────────
+  publish-rn:
+    name: Publish @sceneview-sdk/react-native to npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Check if version already published
+        id: check-rn
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            VERSION=$(node -p "require('./react-native/react-native-sceneview/package.json').version")
+          else
+            VERSION=${GITHUB_REF_NAME#v}
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          # @sceneview-sdk/react-native is scoped; we check the specific
+          # version rather than the latest dist-tag so a re-run after a
+          # partial failure becomes idempotent.
+          PUBLISHED=$(npm view "@sceneview-sdk/react-native@$VERSION" version 2>/dev/null || echo "")
+          if [ "$PUBLISHED" = "$VERSION" ]; then
+            echo "::notice::@sceneview-sdk/react-native@$VERSION already published — skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Publishing @sceneview-sdk/react-native@$VERSION (not yet on npm)"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Sync package version from VERSION_NAME
+        if: steps.check-rn.outputs.skip != 'true'
+        run: |
+          # Belt-and-suspenders: the version-bump skill already updates
+          # this file in the bump commit, but a workflow_dispatch run
+          # against a stale tree would otherwise publish whatever
+          # package.json currently says. Re-derive from the tag here.
+          VERSION="${{ steps.check-rn.outputs.version }}"
+          cd react-native/react-native-sceneview
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+
+      - name: Install + build the lib
+        if: steps.check-rn.outputs.skip != 'true'
+        working-directory: react-native/react-native-sceneview
+        run: |
+          # devDeps now align with peerDeps (RN 0.72.x line, react 18.2),
+          # so the publish runs without --legacy-peer-deps (#1003 closed
+          # the v4.1.0 ERESOLVE that #985 had bandaged).
+          npm install --no-audit --no-fund
+          npm run build
+
+      - name: Publish to npm
+        if: steps.check-rn.outputs.skip != 'true'
+        working-directory: react-native/react-native-sceneview
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
+
+  # ── 4c. Tag SceneViewSwift for Swift Package Manager consumers ────────────
+  # SPM has no central registry — consumers point Xcode at the git URL and
+  # SPM resolves the highest tag matching their version constraint. We
+  # therefore don't run a publish step; the `v[0-9]+.[0-9]+.[0-9]+` push
+  # tag that triggered this workflow IS the SPM publish. This job just
+  # validates that the tag's commit actually contains a Package.swift
+  # rooted at SceneViewSwift/ so a malformed tag doesn't quietly poison
+  # `.package(url:from:)` resolution for every iOS user.
+  validate-spm:
+    name: Validate SceneViewSwift SPM tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Runs on both tag pushes AND workflow_dispatch — previously gated on
+    # `startsWith(github.ref, 'refs/tags/v')` which made it SKIP on dispatch,
+    # which then blocked `create-release` (whose gate required
+    # `validate-spm.result == 'success'` strictly). Closes FU11 (#1003 follow-up).
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: Assert both root and SceneViewSwift Package.swift exist
+        run: |
+          # The monorepo ships TWO Package.swift manifests:
+          #   1. Root (./Package.swift) — what SPM consumers point at:
+          #      `https://github.com/sceneview/sceneview.git`. Added in #920
+          #      so iOS users don't need the separate `sceneview-swift` mirror
+          #      repo that historically got stuck on v4.0.0 (now archived).
+          #   2. Sub-manifest (./SceneViewSwift/Package.swift) — kept in place
+          #      for internal `swift test --package-path SceneViewSwift` runs
+          #      and for any consumer still resolving the archived mirror's
+          #      frozen v4.0.0 tag.
+          # Both must point at the SceneViewSwift target so a malformed tag
+          # doesn't quietly poison `.package(url:from:)` resolution.
+          missing=()
+          [ -f "Package.swift" ] || missing+=("Package.swift (root)")
+          [ -f "SceneViewSwift/Package.swift" ] || missing+=("SceneViewSwift/Package.swift")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing at tag ${GITHUB_REF_NAME}: ${missing[*]}"
+            exit 1
+          fi
+          # Both manifests must declare the SceneViewSwift product. The
+          # `.library(...)` block in SwiftPM manifests is conventionally
+          # written across multiple lines (`.library(\n    name: "X",\n    targets: ...)`)
+          # so we flatten the file to one line before the regex check
+          # (the previous single-line grep silently failed on v4.1.0).
+          # Anchoring on `targets:` after the name avoids matching a
+          # commented-out `// .library(name: "SceneViewSwift", ...)` line (#1007).
+          for f in Package.swift SceneViewSwift/Package.swift; do
+            if ! tr '\n' ' ' < "$f" | grep -qE '\.library\(\s*name:\s*"SceneViewSwift"\s*,\s*targets'; then
+              echo "::error::$f does not declare a SceneViewSwift product"
+              exit 1
+            fi
+          done
+          echo "::notice::Both SPM manifests present and well-formed at tag ${GITHUB_REF_NAME}"
+
+  # NOTE: pub.dev / Flutter publish is not yet automated. Requires a
+  # `PUB_TOKEN` org-level secret + `dart pub publish --force`. Tracked
+  # separately in #962 follow-up.
+
+  # ── 5. Create GitHub Release with auto-generated notes ────────────────────
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [publish-library, publish-mcp, publish-web, publish-rn, validate-spm, publish-api-docs]
+    # User-visible artifacts (Maven Central + the 3 npm packages + SPM tag)
+    # must NOT have failed before we cut the GitHub Release — those are what
+    # users actually install. `publish-api-docs` (Dokka HTML) is secondary:
+    # if it fails (e.g. config-cache deserialization, see #1150), users can
+    # still consume the released libraries — they just won't get fresh API
+    # docs on this tag. A Dokka failure should not block the user-visible
+    # release. We keep `publish-api-docs` in `needs:` to enforce ordering and
+    # surface its status in the run, but the gate below does NOT veto on it.
+    #
+    # Skipped (because the version is already on the registry) is OK —
+    # only an outright failure blocks. Harmonised on the
+    # `!= 'failure' && != 'cancelled'` pattern across all publishers.
+    # Closes FU13 (#1003) and #1150.
+    if: |
+      always()
+      && needs.publish-library.result != 'failure'
+      && needs.publish-library.result != 'cancelled'
+      && needs.publish-mcp.result != 'failure'
+      && needs.publish-mcp.result != 'cancelled'
+      && needs.publish-web.result != 'failure'
+      && needs.publish-web.result != 'cancelled'
+      && needs.publish-rn.result != 'failure'
+      && needs.publish-rn.result != 'cancelled'
+      && needs.validate-spm.result != 'failure'
+      && needs.validate-spm.result != 'cancelled'
+      && startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      # Extract the matching `## vX.Y.Z — …` section from CHANGELOG.md so the
+      # GitHub Release body matches the hand-written narrative we maintain in
+      # the repo (single source of truth). Bare `generate_release_notes: true`
+      # produces a flat "What's Changed → Other Changes" PR list because PRs
+      # rarely carry the labels declared in `.github/release.yml`, which is
+      # below the project's release-note quality standard (see v4.0.9 / v4.1.0
+      # for the reference format). If the CHANGELOG section is missing we
+      # fall back to the auto-generator so the release still ships.
+      - name: Extract release notes from CHANGELOG.md
+        id: notes
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          awk -v ver="## v$VERSION" '
+            $0 ~ "^"ver"( |$)"  { found=1; print; next }
+            found && /^## v[0-9]/ { exit }
+            found                 { print }
+          ' CHANGELOG.md > release-notes.md || true
+          if [ -s release-notes.md ]; then
+            echo "extracted=true" >> "$GITHUB_OUTPUT"
+            echo "Extracted $(wc -l < release-notes.md) lines for v$VERSION from CHANGELOG.md"
+          else
+            echo "extracted=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No '## v$VERSION' section in CHANGELOG.md — falling back to auto-generated PR list"
+          fi
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          body_path: ${{ steps.notes.outputs.extracted == 'true' && 'release-notes.md' || '' }}
+          generate_release_notes: ${{ steps.notes.outputs.extracted != 'true' }}
+          make_latest: true

@@ -1,0 +1,132 @@
+// plane_renderer.mat — see CONTRIBUTING.md "Filament runtime ↔ .filamat ABI invariant"
+//
+// Purpose:    Unlit alpha-blended material that draws detected ARCore planes as a modern,
+//             procedural soft grid (issue #1616). The old dense white dot-grid PNG read
+//             as low-fidelity next to apps like Reality Composer / Polycam; this shader
+//             draws thin anti-aliased grid lines with a feathered edge fade instead.
+//
+// #2224 (real root cause): `blending: transparent` composites ONE*src + (1-a)*dst, but
+//             Filament does NOT premultiply unlit baseColor for you. The fragment emitted
+//             a straight (non-premultiplied) `color`, so the composite resolved to
+//             `color + (1-a)*bg` — the grid `color` was added at FULL strength and `alpha`
+//             only gated how much background bled through. Capping `alpha` (v4.16.4 → 0.45,
+//             v4.16.7 → 0.20) therefore never reduced the white, so over a bright camera
+//             feed the plane still read as an opaque white blob. Fix: PREMULTIPLY in the
+//             fragment (`baseColor.rgb = color * baseColor.a`) so the composite becomes the
+//             intended `lerp(bg, color, alpha) = alpha*color + (1-alpha)*bg` and the 0.20
+//             cap genuinely holds the overlay at ~20 % opacity. Diagnosed + validated with
+//             the non-AR `plane-grid-preview` shader-QA demo (renders this exact .filamat on
+//             a static surface; pixel-measured `color + (1-a)*bg` before, `lerp` after).
+// Used by:    PlaneRenderer (planeMaterial) — ARSceneView plane visualization.
+// Parameters:
+//   texture    — sampler2d, kept for binary/API compatibility with PlaneRenderer; the
+//                shader is now procedural and does NOT sample it.
+//   color      — float3, RGB tint of the grid lines.
+//   uvScale    — float2, tiling factor mapping local plane X/Z to grid-cell coordinates.
+// matc profile: C (ARCore — "--optimize-size -p mobile -a opengl -a vulkan").
+material {
+    name : "AR Core Plane Material",
+
+    "parameters": [
+        {
+            "type": "sampler2d",
+            "name": "texture"
+        },
+        {
+            "type": "float3",
+            "name": "color"
+        },
+        {
+            "type": "float2",
+            "name": "uvScale"
+        }
+    ],
+    "variables" : [
+        "texCoordsAlpha"
+    ],
+    "requires" : [
+        "position"
+    ],
+    shadingModel : unlit,
+    // `transparent` = Filament premultiplied-alpha compositing (ONE, ONE_MINUS_SRC_ALPHA).
+    // The fragment premultiplies `baseColor.rgb *= baseColor.a` (see #2224 note below), so
+    // the composite is the intended lerp(bg, color, alpha).
+    "blending": "transparent"
+}
+
+vertex {
+    void materialVertex(inout MaterialVertexInputs material) {
+        float3 pos = getPosition().xyz;
+
+        // The Y position of the vertex represents the Alpha of the plane at this Vertex.
+        material.texCoordsAlpha.z = pos.y;
+
+        // Zero out the Y vertex and compute the world position.
+        pos.y = 0.0;
+        material.worldPosition = mulMat4x4Float3(getWorldFromModelMatrix(), pos);
+
+        // Compute the texture coordinates.
+        // The X axis of the texture corresponds to the local X axis of the plane.
+        // The Y axis of the texture corresponds to the local Z axis of the plane.
+        // Scale the texture coordinates by the scale parameter passed into the material.
+        material.texCoordsAlpha.x = pos.x * materialParams.uvScale.x;
+        material.texCoordsAlpha.y = pos.z * materialParams.uvScale.y;
+    }
+}
+
+fragment {
+    // Anti-aliased distance-to-nearest-grid-line, in grid-cell units.
+    // Uses screen-space derivatives so the line stays ~1px wide at any
+    // distance/angle — no shimmer, unlike the fixed-size dot PNG.
+    float gridLine(float2 uv) {
+        float2 grid = abs(fract(uv - 0.5) - 0.5);
+        float2 fw = fwidth(uv);
+        // Half-width of the line in cell units (~1.1 device px once divided by fwidth).
+        float2 d = grid / max(fw, vec2(1e-5));
+        float line = 1.0 - min(min(d.x, d.y) * 0.65, 1.0);
+        // #2224 v2 — cap line at 0.4 instead of 1.0. Even when `fwidth(uv)` saturates at
+        // oblique camera angles and `d` → 0 across the whole plane (which would normally drive
+        // `line → 1.0` everywhere → solid white surface), this cap keeps the grid contribution
+        // at a maximum of 40 % alpha. Combined with the alpha hard-cap below and the cool-white
+        // tint in `PlaneRenderer.kt`, the grid reads as a subtle translucent overlay (~20 %
+        // total opacity) instead of an opaque blob.
+        return clamp(line, 0.0, 0.4);
+    }
+
+    void material(inout MaterialInputs material) {
+        prepareMaterial(material);
+
+        // Procedural soft grid — replaces the dated dense dot-grid PNG (#1616).
+        float2 uv = variable_texCoordsAlpha.xy;
+
+        // Thin anti-aliased grid lines.
+        float line = gridLine(uv);
+
+        // Soft cell glow: a faint fill inside each cell so the plane reads as a
+        // surface, not just wireframe — gives the modern "feathered overlay" look.
+        float2 cell = abs(fract(uv) - 0.5) * 2.0;
+        float fill = (1.0 - max(cell.x, cell.y)) * 0.10;
+
+        // Per-vertex edge feather: PlaneVisualizer writes the boundary->interior
+        // ramp into texCoordsAlpha.z (0 at the plane edge, 1 in the interior).
+        // Smooth it so detected planes fade out softly instead of a hard cut.
+        float edge = smoothstep(0.0, 0.6, variable_texCoordsAlpha.z);
+
+        // #2224 v2 — first iteration (v4.16.4) capped alpha at 0.45 but on-device QA in
+        // sunny outdoor scenes showed the grid still read as an opaque white blob: 45 % of
+        // a near-white tint on already-light camera input ≈ 80 %+ perceived white. v4.16.5
+        // tightens to a 20 % alpha cap *and* caps `line` itself at 0.4 in `gridLine()` so
+        // the saturation is bounded at the source. Industry baseline (Apple ARKit / Wayfair /
+        // ARCore Depth Lab reticle) ships plane viz at 20-30 % alpha unlit — this matches.
+        float alpha = clamp(line * 0.4 + fill * 0.3, 0.0, 1.0) * edge;
+
+        material.baseColor.a = min(alpha, 0.20);
+        // #2224 — PREMULTIPLY by alpha. With `blending: transparent` Filament composites
+        // ONE * src + (1-a) * dst and does NOT premultiply unlit baseColor for us, so
+        // emitting straight `color` made the composite `color + (1-a)*bg` (grid colour
+        // added at full strength → white blob over a bright feed, regardless of the alpha
+        // cap). Premultiplying here makes it `alpha*color + (1-alpha)*bg` = lerp(bg, color,
+        // alpha), so the 0.20 cap genuinely holds the overlay at ~20 % opacity.
+        material.baseColor.rgb = materialParams.color * material.baseColor.a;
+    }
+}

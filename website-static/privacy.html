@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https://www.googletagmanager.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' blob: https://www.google-analytics.com https://*.google-analytics.com https://*.analytics.google.com https://cdn.jsdelivr.net https://api.sketchfab.com https://media.sketchfab.com; frame-src https://app.rerun.io; worker-src 'self' blob:; base-uri 'self'; object-src 'none'">
+  <script>
+    (function() {
+      try {
+        var t = localStorage.getItem('sceneview-theme');
+        if (t !== 'dark' && t !== 'light') {
+          t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', t);
+      } catch(e) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    })();
+  </script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy — SceneView</title>
+  <meta name="description" content="Privacy Policy for the SceneView Demo app. No tracking, offline by default, and an opt-in in-app feedback feature.">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://sceneview.github.io/privacy.html">
+  <meta property="og:title" content="Privacy Policy — SceneView">
+  <meta property="og:description" content="SceneView Demo collects no personal data during normal use. The only exception is the opt-in in-app feedback feature.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://sceneview.github.io/privacy.html">
+  <meta property="og:image" content="https://sceneview.github.io/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Privacy Policy — SceneView">
+  <meta name="twitter:description" content="SceneView Demo privacy policy. No tracking; opt-in feedback feature disclosed.">
+  <meta name="twitter:image" content="https://sceneview.github.io/og-image.png">
+  <meta name="theme-color" content="#005bc1">
+  <meta property="og:site_name" content="SceneView">
+  <meta property="og:locale" content="en_US">
+
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    /* ===== PRIVACY PAGE ===== */
+    .privacy-page {
+      padding-top: var(--nav-height);
+    }
+
+    /* Hero */
+    .privacy-hero {
+      padding: 80px 0 48px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .privacy-hero::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse 80% 60% at 50% 20%, rgba(0,91,193,0.08) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    [data-theme="dark"] .privacy-hero::before {
+      background: radial-gradient(ellipse 80% 60% at 50% 20%, rgba(141,179,255,0.06) 0%, transparent 70%);
+    }
+
+    .privacy-hero__container {
+      max-width: var(--container-max);
+      margin: 0 auto;
+      padding: 0 var(--container-padding);
+    }
+
+    .privacy-hero__title {
+      font-size: clamp(2.5rem, 6vw, 4rem);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1.08;
+      background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-tertiary) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 12px;
+    }
+
+    .privacy-hero__updated {
+      font-size: 0.9rem;
+      color: var(--color-on-surface-variant);
+    }
+
+    /* Content */
+    .privacy-content {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 48px var(--container-padding) 80px;
+    }
+
+    .privacy-content__summary {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--color-on-surface);
+      background: var(--color-surface-container-low);
+      border: 1px solid var(--color-outline-variant);
+      border-radius: 12px;
+      padding: 20px 24px;
+      margin-bottom: 48px;
+      line-height: 1.6;
+    }
+
+    .privacy-content h2 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      margin-top: 40px;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--color-outline-variant);
+      color: var(--color-on-surface);
+    }
+
+    .privacy-content h2:first-of-type {
+      margin-top: 0;
+    }
+
+    .privacy-content h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-top: 24px;
+      margin-bottom: 8px;
+      color: var(--color-on-surface);
+    }
+
+    .privacy-content p {
+      font-size: 0.95rem;
+      color: var(--color-on-surface-variant);
+      line-height: 1.7;
+      margin-bottom: 12px;
+    }
+
+    .privacy-content ul {
+      padding-left: 24px;
+      margin-bottom: 16px;
+      list-style: disc;
+    }
+
+    .privacy-content li {
+      font-size: 0.95rem;
+      color: var(--color-on-surface-variant);
+      line-height: 1.7;
+      margin-bottom: 8px;
+    }
+
+    .privacy-content table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 16px 0;
+      font-size: 0.9rem;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--color-outline-variant);
+    }
+
+    .privacy-content th,
+    .privacy-content td {
+      padding: 12px 16px;
+      text-align: left;
+      color: var(--color-on-surface-variant);
+      border-bottom: 1px solid var(--color-outline-variant);
+    }
+
+    .privacy-content th {
+      background: var(--color-surface-container-low);
+      font-weight: 600;
+      color: var(--color-on-surface);
+    }
+
+    .privacy-content tr:last-child td {
+      border-bottom: none;
+    }
+
+    .privacy-content a {
+      color: var(--color-primary);
+      transition: opacity var(--duration-short);
+    }
+
+    .privacy-content a:hover {
+      text-decoration: underline;
+      opacity: 0.85;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .privacy-hero { padding: 48px 0 32px; }
+      .privacy-content { padding: 32px var(--container-padding) 64px; }
+    }
+
+    @media (max-width: 480px) {
+      .privacy-hero { padding: 32px 0 24px; }
+      .privacy-content { padding: 24px var(--container-padding) 48px; }
+      .privacy-content table { font-size: 0.8rem; }
+      .privacy-content th,
+      .privacy-content td { padding: 8px 10px; }
+    }
+  </style>
+  <link href="assets/fonts/fonts.css" rel="stylesheet">
+</head>
+<body>
+
+  <!-- ===== NAVIGATION ===== -->
+  <nav class="nav" id="nav">
+    <div class="nav__container">
+      <a href="/" class="nav__brand" aria-label="SceneView SDK — home">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="28" height="28" aria-hidden="true" style="flex-shrink:0">
+          <defs>
+            <linearGradient id="navTopGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8AB4F8"/><stop offset="100%" stop-color="#42A5F5"/></linearGradient>
+            <linearGradient id="navRightGrad" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#4A90D9"/><stop offset="100%" stop-color="#005BC1"/></linearGradient>
+            <linearGradient id="navLeftGrad" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#005BC1"/><stop offset="100%" stop-color="#0D47A1"/></linearGradient>
+          </defs>
+          <polygon points="256,272 122,194 122,340 256,418" fill="url(#navLeftGrad)"/>
+          <polygon points="256,272 390,194 390,340 256,418" fill="url(#navRightGrad)"/>
+          <polygon points="256,126 390,204 256,282 122,204" fill="url(#navTopGrad)"/>
+          <polyline points="96,120 96,82 134,82" fill="none" stroke="#005BC1" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+          <polyline points="416,120 416,82 378,82" fill="none" stroke="#005BC1" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+          <polyline points="96,392 96,430 134,430" fill="none" stroke="#005BC1" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+          <polyline points="416,392 416,430 378,430" fill="none" stroke="#005BC1" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>SceneView SDK</span>
+      </a>
+
+      <div class="nav__links" id="navLinks">
+        <a href="/#features" class="nav__link">Features</a>
+        <a href="/showcase.html" class="nav__link">Showcase</a>
+        <a href="/playground.html" class="nav__link">Playground</a>
+        <a href="/docs.html" class="nav__link" target="_blank" rel="noopener">Docs</a>
+        <button class="nav__theme-toggle" id="themeToggle" aria-label="Toggle dark mode">
+          <svg class="icon-sun" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+          </svg>
+          <svg class="icon-moon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="nav__actions">
+        <a href="https://github.com/sceneview/sceneview" class="nav__icon-btn" target="_blank" rel="noopener" aria-label="View on GitHub">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+          </svg>
+        </a>
+        <button class="nav__hamburger nav__hamburger--mobile" id="hamburgerMobile" aria-label="Toggle menu">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <main class="privacy-page">
+
+    <!-- ===== HERO ===== -->
+    <section class="privacy-hero">
+      <div class="privacy-hero__container">
+        <h1 class="privacy-hero__title reveal">Privacy Policy</h1>
+        <p class="privacy-hero__updated reveal"><strong>SceneView Demo</strong> &mdash; Last updated: June 12, 2026</p>
+      </div>
+    </section>
+
+    <!-- ===== CONTENT ===== -->
+    <div class="privacy-content">
+
+      <div class="privacy-content__summary reveal">
+        SceneView Demo collects no personal data during normal use &mdash; no accounts, no analytics, no tracking. The one exception is the optional in-app feedback feature: if you choose to send feedback, it records your screen and microphone audio and uploads them to the SceneView feedback service. Nothing is recorded or sent unless you explicitly start a feedback report and agree.
+      </div>
+
+      <h2>Data Collection (Normal Use)</h2>
+      <ul>
+        <li><strong>No personal data collected</strong> &mdash; Outside the feedback feature, the app does not collect names, email addresses, IP addresses, or any other personally identifiable information.</li>
+        <li><strong>No analytics or tracking</strong> &mdash; No analytics SDKs, telemetry, fingerprinting, or behavioral tracking of any kind.</li>
+        <li><strong>Offline by default</strong> &mdash; 3D models, textures, and environments are bundled locally or downloaded for demos; no personal data is sent during downloads. The only feature that uploads data is the opt-in feedback reporter below.</li>
+        <li><strong>No accounts</strong> &mdash; The app does not require or support user accounts.</li>
+      </ul>
+
+      <h2>Camera Usage (AR Features)</h2>
+      <ul>
+        <li>The app uses the device camera <strong>exclusively</strong> for augmented reality features powered by Google ARCore.</li>
+        <li>Camera data for AR is processed <strong>locally on-device</strong> in real time for plane detection and object placement.</li>
+        <li><strong>No camera images or AR video are stored, recorded, or transmitted</strong> to any server.</li>
+        <li>Camera access is only requested when the user navigates to the AR tab. A feedback screen recording may capture the AR viewfinder if an AR demo is open &mdash; only while you are actively recording feedback.</li>
+      </ul>
+
+      <h2>Face Data (TrueDepth API / ARKit Face Tracking)</h2>
+      <ul>
+        <li><strong>What is collected:</strong> when you open an AR face demo on iOS, the app uses Apple&rsquo;s ARKit face tracking (which relies on the TrueDepth camera) to obtain a real-time facial mesh &mdash; face geometry and expression coefficients. On Android, the equivalent demo uses Google ARCore Augmented Faces. No photographs of your face are taken by the app.</li>
+        <li><strong>Purpose:</strong> face data is used <strong>solely</strong> to render real-time 3D effects anchored to your face inside the demo, on screen, while the demo is open. It is not used for identification, authentication, profiling, or any other purpose.</li>
+        <li><strong>Storage &amp; retention:</strong> face data is processed <strong>in memory, on your device only</strong>. It is never recorded, stored, written to disk, or retained &mdash; it is discarded as each camera frame is rendered, and entirely released when you leave the demo.</li>
+        <li><strong>Sharing:</strong> face data <strong>never leaves your device</strong>. It is not transmitted to us or to any third party, and the app contains no analytics or tracking SDKs.</li>
+      </ul>
+
+      <h2>In-App Feedback (Opt-In)</h2>
+      <p>The app includes a feedback button that lets you report a bug or share an idea by recording your screen and voice. It is <strong>opt-in and consent-gated</strong> &mdash; it does nothing until you tap the button, work through its consent screens, and approve Android's own screen-capture dialog. You can cancel at any point and discard a recording before it is sent.</p>
+      <p><strong>What is captured</strong> when you submit feedback: a short screen recording (<code>.mp4</code>), your microphone audio, any text you type, and device/app context (app version and build, Android version and API level, device manufacturer and model, locale, free RAM). No advertising ID, no IP address, no account identifier.</p>
+      <p><strong>Where it goes:</strong> the recording, audio, and context are uploaded over HTTPS to the SceneView feedback service &mdash; an open-source Cloudflare Worker operated by the SceneView project. The service stores the screen recording and audio <strong>privately</strong> in Cloudflare R2 object storage, transcribes the audio to text with Cloudflare Workers AI (the OpenAI Whisper model), and creates a <strong>public GitHub issue</strong> so maintainers can triage it.</p>
+      <p><strong>What becomes public:</strong> the GitHub issue contains only the transcript, any text you typed, and the device/app context table &mdash; the raw screen recording and audio are never attached to the public issue. Please avoid showing or saying personal information while recording.</p>
+      <p><strong>Access control &amp; retention:</strong> the screen recording and audio are accessible only to SceneView maintainers, through an admin-token-gated viewer. They are <strong>automatically deleted after 90 days</strong>; the transcript and context (already public on the issue) are kept. The service hashes the request IP for rate limiting only &mdash; the raw IP is never stored.</p>
+
+      <h2>Third-Party SDKs</h2>
+      <table>
+        <thead>
+          <tr><th>SDK</th><th>Purpose</th><th>Data collected</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Google Filament</td><td>3D rendering engine</td><td>None</td></tr>
+          <tr><td>Google ARCore</td><td>Augmented reality</td><td>Camera processed locally, no data sent</td></tr>
+          <tr><td>Jetpack Compose</td><td>UI framework</td><td>None</td></tr>
+          <tr><td>Android MediaProjection / MediaRecorder</td><td>Screen + audio capture for the opt-in feedback feature</td><td>Only when you record feedback</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Third-Party Processors (Feedback Feature Only)</h2>
+      <p>These processors handle data <strong>only</strong> when you choose to submit feedback:</p>
+      <table>
+        <thead>
+          <tr><th>Service</th><th>Role</th><th>Data handled</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Cloudflare R2</td><td>Private object storage</td><td>Screen recording, audio</td></tr>
+          <tr><td>Cloudflare Workers AI (Whisper)</td><td>Speech-to-text transcription</td><td>Audio</td></tr>
+          <tr><td>GitHub</td><td>Public issue tracker</td><td>Transcript, typed text, device/app context</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Data Sharing</h2>
+      <p>Outside the feedback feature, no data is shared with third parties. For the feedback feature, data is shared only with the processors above, and the feedback transcript and context become public on a GitHub issue. No data is sold or used for advertising.</p>
+
+      <h2>Children's Privacy</h2>
+      <p>The app does not knowingly collect any data from children under 13. The app is rated for ages 13 and older.</p>
+
+      <h2>Changes to This Policy</h2>
+      <p>We may update this Privacy Policy from time to time. Changes will be posted on this page with an updated date.</p>
+
+      <h2>Contact</h2>
+      <ul>
+        <li><strong>Website:</strong> <a href="https://sceneview.github.io">sceneview.github.io</a></li>
+        <li><strong>GitHub:</strong> <a href="https://github.com/sceneview/sceneview">github.com/sceneview/sceneview</a></li>
+      </ul>
+
+    </div>
+
+  </main>
+
+  <!-- ===== FOOTER ===== -->
+  <footer class="footer">
+    <div class="footer__container">
+      <div class="footer__grid">
+        <div class="footer__brand-col">
+          <div class="footer__brand-name">SceneView SDK</div>
+          <p class="footer__brand-desc">The architectural logic for building high-performance 3D spatial experiences across all modern platforms.</p>
+          <div class="footer__copyright">&copy; 2026 SceneView SDK. Architectural Logic.</div>
+        </div>
+        <div class="footer__col">
+          <h4 class="footer__col-title">Documentation</h4>
+          <ul class="footer__col-list">
+            <li><a href="/docs.html" target="_blank" rel="noopener">Examples</a></li>
+            <li><a href="/showcase.html">Showcase</a></li>
+          </ul>
+        </div>
+        <div class="footer__col">
+          <h4 class="footer__col-title">Community</h4>
+          <ul class="footer__col-list">
+            <li><a href="https://github.com/sceneview/sceneview" target="_blank" rel="noopener">GitHub</a></li>
+            <li><a href="https://discord.gg/sceneview" target="_blank" rel="noopener">Discord</a></li>
+            <li><a href="https://twitter.com/nicoadams_" target="_blank" rel="noopener">Twitter</a></li>
+          </ul>
+        </div>
+        <div class="footer__col">
+          <h4 class="footer__col-title">Legal</h4>
+          <ul class="footer__col-list">
+            <li><a href="/privacy.html">Privacy</a></li>
+            <li><a href="https://github.com/sceneview/sceneview/blob/main/LICENSE" target="_blank" rel="noopener">Terms</a></li>
+            <li><a href="https://github.com/sceneview/sceneview/blob/main/LICENSE" target="_blank" rel="noopener">License</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+
+  <!-- Scroll reveal -->
+  <script>
+  // Scroll reveal
+  (function() {
+    var reveals = document.querySelectorAll('.reveal');
+    if (!reveals.length) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      reveals.forEach(function(el) { el.classList.add('revealed'); });
+      return;
+    }
+    function revealVisible() {
+      reveals.forEach(function(el) {
+        if (el.getBoundingClientRect().top < window.innerHeight + 100) el.classList.add('revealed');
+      });
+    }
+    revealVisible();
+    if ('IntersectionObserver' in window) {
+      var obs = new IntersectionObserver(function(entries) {
+        entries.forEach(function(e) {
+          if (e.isIntersecting) { e.target.classList.add('revealed'); obs.unobserve(e.target); }
+        });
+      }, { threshold: 0.01, rootMargin: '0px 0px 200px 0px' });
+      reveals.forEach(function(el) { if (!el.classList.contains('revealed')) obs.observe(el); });
+    }
+    var t; window.addEventListener('scroll', function() { clearTimeout(t); t = setTimeout(revealVisible, 50); }, { passive: true });
+    setTimeout(function() { reveals.forEach(function(el) { el.classList.add('revealed'); }); }, 3000);
+  })();
+  </script>
+</body>
+</html>

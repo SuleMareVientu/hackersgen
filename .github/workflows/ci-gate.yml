@@ -1,0 +1,442 @@
+name: CI Gate
+
+# Single always-on aggregator status check for branch protection.
+#
+# WHY THIS EXISTS (#1314)
+# ----------------------
+# `main` is merged fire-and-forget (`gh pr merge --squash --auto`). For
+# auto-merge to actually gate on CI, branch protection must require a
+# status check. But the repo's real CI workflows (ci.yml, ios.yml,
+# telemetry-ci.yml) all use workflow-level `paths`/`paths-ignore` filters
+# — and ci.yml additionally per-job `if:`-gates jobs on a path filter — so
+# a docs-only or scripts-only PR runs ZERO (or `skipped`) jobs. Requiring
+# any of those checks directly would leave such a PR stuck on
+# "Expected — waiting for status" forever.
+#
+# DESIGN CHOICE
+# -------------
+# A GitHub job can only `needs:` jobs in its OWN workflow, and the repo
+# has several PR-triggered workflows with different path filters — a single
+# `needs:`-based gate cannot see across them. A `workflow_run`-triggered
+# gate is unreliable as a required check (its check run attaches to the
+# branch, not the PR head SHA, so the PR merge box never sees it).
+#
+# So this is a dedicated workflow with a `pull_request` trigger and NO
+# path filter — it therefore runs on EVERY PR and ALWAYS reports the
+# `CI Gate` status. Its single job polls the GitHub Checks API for the
+# PR head SHA, waits for every OTHER check run to finish, and:
+#   - FAILS  if any other check concluded `failure`/`cancelled`/`timed_out`
+#   - PASSES if every other check is `success`, `skipped`, or `neutral`
+# A path-filtered-out workflow simply produces no check runs for that SHA
+# (or its `if:`-skipped jobs report `skipped`) — either way the gate is
+# green, so docs/scripts/CI-only PRs merge without jamming.
+#
+# `action_required` is treated as PENDING, not failure (#1543): a fork PR's
+# checks sit in `action_required` until a maintainer approves the run. That
+# is not a defect — flipping `CI Gate` red would block a legitimate fork PR
+# that is merely awaiting approval. The gate keeps waiting for those checks
+# to be approved-then-completed (until the deadline), exactly as it would
+# for any other in-progress check.
+#
+# CORE-CHECK GUARD (#1543)
+# ------------------------
+# Without a lower bound on the checks observed, the gate can pass green if a
+# slow, non-path-gated workflow has not yet registered ANY check run by the
+# time every *already-registered* `others` check has completed. To close
+# that race the gate refuses to exit green until every check in
+# `REQUIRED_CHECKS` (below) has been observed for this SHA — UNLESS none of
+# `ci.yml`'s checks appear at all, which is the legitimate signature of a
+# docs-only PR (ci.yml is workflow-level `paths-ignore`-filtered). This is a
+# name-based "wait for these IF expected" guard, so it never false-negatives
+# a genuinely light docs-only PR while still catching a core check that is
+# simply slow to register.
+#
+# DEVICE QA EXCLUSION (#1588)
+# ---------------------------
+# `Device QA — *` check runs are deliberately excluded from the aggregation.
+# `device-qa.yml` is intentionally NOT a per-PR gate — it has no
+# `pull_request` trigger and runs only on push-to-main / `workflow_dispatch`
+# / nightly schedule (see its header comment "NOT in the per-PR CI Gate").
+# But when an agent manually `workflow_dispatch`-es `Device QA` on a branch
+# head SHA to validate it, the resulting `Device QA — web (Playwright)` /
+# `Device QA — android (Maestro)` check runs attach to that SHA, and the
+# corresponding PR's `CI Gate` would otherwise pick them up. Any check run
+# whose name starts with `Device QA` is therefore filtered out of the
+# `others` set — the same treatment as the gate's own `SELF_CHECK`.
+#
+# ADVISORY CHECK EXCLUSION (#1984)
+# --------------------------------
+# `Coverage` was deliberately moved OFF the PR-blocking path and made
+# advisory/nightly by #1959 (#1955) — the `coverage` job carries
+# `continue-on-error: true`. But `continue-on-error` only masks an
+# in-job *step* failure; it does NOT mask a `cancelled` conclusion when
+# the whole job is concurrency-cancelled. On PR #1889 a transient
+# concurrency-cancel left `Coverage (advisory): CANCELLED`, and the gate's
+# failure filter (`failure`/`cancelled`/`timed_out`) flipped `CI Gate` red
+# even though the only non-success check was advisory. An advisory check
+# must NEVER affect the gate verdict — for ALL conclusions, including
+# `CANCELLED` / `SKIPPED` / `FAILURE`. So any check run whose name is in
+# `ADVISORY_CHECKS` (substring match) is filtered out of the `failed` set
+# entirely, regardless of conclusion.
+#
+# An advisory check is ALSO dropped from the `pending` wait set (#2013):
+# the gate must not block waiting for it. The slow `Coverage (advisory)`
+# job can run well past the gate's internal deadline; if the gate waited
+# on it the poll loop would time out red even though Coverage can never
+# gate. Advisory checks may keep running — the gate stops as soon as every
+# NON-advisory check has finished and ignores the advisory ones entirely.
+#
+# DOCS-ONLY BYPASS (#2117)
+# ------------------------
+# A docs-only PR (paths-ignored by ci.yml and all other PR-triggered
+# workflows) registers ZERO check runs besides `CI Gate` itself. Without
+# a bypass, the gate waits the full 50 min then hard-fails, blocking
+# auto-merge until an admin manually merges. Fix: a short grace period
+# (90 s after the initial 30 s warm-up) — if no other check run has
+# registered by then, the gate exits green. Any non-trivial PR registers
+# at least one check run within 90 s; the grace period only fires while
+# `others` is completely empty and is disabled as soon as one check
+# run appears.
+#
+# Branch protection on `main` requires ONLY this `CI Gate` check.
+
+on:
+  pull_request:
+    branches: [main]
+    # ⛔ Intentionally NO paths / paths-ignore filter. This workflow MUST
+    # run on every PR so the `CI Gate` status is always reported — that
+    # is the whole point of the aggregator pattern (#1314).
+  workflow_dispatch:
+
+concurrency:
+  group: ci-gate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  checks: read
+  contents: read
+
+jobs:
+  ci-gate:
+    name: CI Gate
+    runs-on: ubuntu-latest
+    # The internal poll loop self-terminates at a 50-min deadline (+30s
+    # warm-up sleep). It must comfortably exceed the slowest CI job's own
+    # timeout. Since #1955 split JaCoCo off the PR-blocking path, the
+    # slowest jobs are the advisory `Coverage (advisory)` job
+    # (`timeout-minutes: 45`, but `continue-on-error: true` so it never
+    # gates) and the `build` job (`timeout-minutes: 30`); the blocking
+    # `Unit tests` job is `timeout-minutes: 30`. The 50-min internal
+    # deadline still comfortably exceeds every one of them, so a
+    # slow-but-succeeding job is seen as completing, not as a gate timeout.
+    # The job timeout sits comfortably above the internal deadline so the
+    # loop's own "::error:: timed out waiting for …" message is what
+    # surfaces — a hard runner kill would give no diagnostic. 60 min keeps a
+    # ~9-min cushion above the internal ~50.5-min worst case (#1360, #1554,
+    # #1955).
+    timeout-minutes: 60
+    steps:
+      # REQUIRED: the aggregation step shells out to
+      # `.github/scripts/ci-gate-aggregate.sh`. Without a checkout that
+      # script is not on disk, so the step dies with "No such file or
+      # directory", `gate_rc` is non-zero and the gate fails EVERY PR
+      # (#2013). This is the actual cause of the v4.13.0 admin-merge spree —
+      # the helper was extracted by #1984 but no checkout step was added.
+      - uses: actions/checkout@v7
+      - name: Aggregate all PR check conclusions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPO: ${{ github.repository }}
+          # This job's own check run name — excluded from the aggregation
+          # so the gate never waits on itself.
+          SELF_CHECK: CI Gate
+          # Core checks that `ci.yml` ALWAYS produces on a non-docs PR — the
+          # `changes`, `repo-hygiene` and `quality-gate` jobs have no per-job
+          # `if:` path gate, so when `ci.yml` runs at all, all three appear.
+          # The gate refuses to exit green until every one of these has been
+          # observed for the head SHA (see CORE-CHECK GUARD note above), so a
+          # slow-to-register core workflow can't be missed. Newline-separated.
+          # Keep in sync with the un-`if:`-gated job `name:`s in ci.yml.
+          REQUIRED_CHECKS: |
+            Detect changed paths
+            Repo hygiene checks
+            Quality gate (full)
+          # Advisory check-run names — substring-matched, newline-separated.
+          # An advisory check (e.g. `Coverage (advisory)`, made advisory by
+          # #1959/#1955) must NEVER affect the gate verdict, for ANY
+          # conclusion including `CANCELLED` / `SKIPPED` / `FAILURE`. Any
+          # check run whose name CONTAINS one of these strings is dropped
+          # from the pass/fail decision (#1984). It is still permitted to
+          # register and is still waited on while pending — it just cannot
+          # red-light the gate.
+          ADVISORY_CHECKS: |
+            Coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # workflow_dispatch has no PR context — nothing to aggregate.
+          if [ -z "${HEAD_SHA:-}" ]; then
+            echo "No pull_request context (manual dispatch) — nothing to gate."
+            exit 0
+          fi
+
+          echo "Aggregating check runs for $REPO @ $HEAD_SHA"
+
+          # Poll until every non-self check run for this SHA has finished.
+          # GitHub registers a workflow's check runs within a few seconds
+          # of the PR event, so we wait briefly before the first read to
+          # avoid a false "all green" on an empty list.
+          #
+          # The fixed warm-up sleep alone is not enough: if another
+          # workflow's check runs register *after* the sleep, the first
+          # loop iteration sees an empty `others` set and would pass the
+          # gate prematurely. So we additionally refuse to exit green
+          # until at least one non-self check run has been observed AND
+          # every expected core check (see REQUIRED_CHECKS) has registered.
+          # 50-min internal deadline: must comfortably exceed the slowest
+          # CI job's own timeout. Since #1955 the heaviest jobs are the
+          # advisory `Coverage (advisory)` job (45 min, continue-on-error)
+          # and `build` (30 min); the blocking `Unit tests` job is 30 min —
+          # all well under 50 min, so a slow-but-succeeding job is seen as
+          # completing.
+          #
+          # DOCS-ONLY BYPASS (#2117)
+          # ------------------------
+          # For a docs-only PR (paths-ignored by ci.yml and every other
+          # workflow), no check runs other than `CI Gate` itself ever
+          # register. Without a bypass, the gate polls until the full
+          # 50-min deadline and then hard-fails — blocking auto-merge for
+          # ~50 minutes then requiring an admin-merge workaround.
+          #
+          # Fix: a short docs-only grace period (90 s after the initial
+          # warm-up sleep). If no other check runs have appeared by the
+          # time the grace period expires, the PR is legitimately light
+          # (all workflows were path-filtered out), and the gate exits
+          # green. Any non-trivial PR will register at least one check run
+          # within 90 s; the threshold has been confirmed against multiple
+          # CI runs.  The grace period only applies while `others` is
+          # *completely empty* — once at least one check run registers the
+          # normal poll loop takes over and the docs-bypass is inactive.
+          deadline=$(( $(date +%s) + 50 * 60 ))
+          # docs-only grace: 90 s after the initial 30 s warm-up = 120 s total.
+          docs_bypass_deadline=$(( $(date +%s) + 90 ))
+          sleep 30
+          seen_any_other=false
+
+          # Normalise REQUIRED_CHECKS into a clean, non-empty list.
+          required_checks=$(echo "${REQUIRED_CHECKS:-}" | sed '/^[[:space:]]*$/d')
+
+          # Normalise ADVISORY_CHECKS into a clean, non-empty list of
+          # substrings (#1984). A check run whose name CONTAINS any of these
+          # is advisory and is excluded from the pass/fail decision below,
+          # regardless of conclusion.
+          advisory_checks=$(echo "${ADVISORY_CHECKS:-}" | sed '/^[[:space:]]*$/d')
+
+          while :; do
+            # All check runs for the head commit (handles >100 via paging).
+            # `id` is carried so we can pick the LATEST run per name below
+            # (check-run ids increase monotonically with creation).
+            runs=$(gh api --paginate \
+              "repos/$REPO/commits/$HEAD_SHA/check-runs" \
+              --jq '.check_runs[] | {name: .name, status: .status, conclusion: .conclusion, id: .id}')
+
+            # Drop this gate's own check run from consideration, plus every
+            # `Device QA — *` run: Device QA is deliberately NOT a per-PR gate
+            # (see header comment + device-qa.yml), so a manually-dispatched
+            # Device QA run on a branch SHA must never count here (#1588).
+            others=$(echo "$runs" | jq -c --arg self "$SELF_CHECK" \
+              'select((.name != $self) and (.name | startswith("Device QA") | not))')
+
+            # LATEST-RUN-PER-NAME COLLAPSE (#2492)
+            # ------------------------------------
+            # `ci.yml`'s concurrency group is keyed on the PR HEAD SHA
+            # (`ci-<head.sha>`, ci.yml#L84). Merging a sibling PR to `main`
+            # makes GitHub recompute THIS PR's merge ref and re-fire its
+            # `pull_request` event — at the SAME head SHA, so `ci.yml`'s
+            # `cancel-in-progress` CANCELS the in-flight run and immediately
+            # starts a FRESH one for that same SHA. The check-runs API then
+            # returns BOTH the superseded `cancelled` run AND the fresh run
+            # under the same name (e.g. two `Detect changed paths`). The
+            # superseded `cancelled` conclusion is pure concurrency noise —
+            # exactly like `stale` — yet without this collapse it lands in
+            # the `failed` set and red-lights `CI Gate`, skipping every
+            # downstream job and blocking `--auto` until a manual re-run
+            # (#2492; this ping-ponged PR #2467 three times in one session).
+            #
+            # Fix: keep only the LATEST run (max id) for each name before the
+            # pending/fail decisions, so a name's verdict is its newest run.
+            # A genuinely-cancelled check with NO newer run stays the latest
+            # and STILL fails the gate (the #1984 advisory exclusion and the
+            # `blocking CANCELLED still fails` contract in
+            # test-ci-gate-aggregation.sh are untouched — the standalone
+            # aggregate script still receives one `<conclusion>\t<name>` line
+            # per name). Concurrency is unchanged, so the CI-minutes saving of
+            # `cancel-in-progress` is preserved.
+            others=$(echo "$others" \
+              | jq -s -c 'group_by(.name) | map(max_by(.id))[]')
+
+            if [ -z "$others" ]; then
+              # DOCS-ONLY BYPASS (#2117): if the short grace period has
+              # elapsed with still no other check runs, every workflow was
+              # path-filtered out — this is a legitimately docs-only PR.
+              # Exit green so auto-merge is not blocked.
+              if [ "$(date +%s)" -ge "$docs_bypass_deadline" ]; then
+                echo "No other CI check runs registered within the docs-only grace period."
+                echo "All changed paths appear to be CI-exempt (docs, website, marketing, branding, *.md, llms*.txt)."
+                echo "CI Gate passed — docs-only PR, no CI workflows triggered."
+                exit 0
+              fi
+              if [ "$(date +%s)" -ge "$deadline" ]; then
+                echo "::error::Timed out — no other CI check runs ever registered for this SHA."
+                exit 1
+              fi
+              echo "No other check runs reported for this SHA yet — waiting for at least one to register."
+              sleep 20
+              continue
+            fi
+            # At least one other check run has appeared — disable the
+            # docs-only bypass (set deadline to past so it can't fire).
+            docs_bypass_deadline=0
+
+            seen_any_other=true
+
+            # All check-run names observed for this SHA (completed or not).
+            observed_names=$(echo "$others" | jq -r '.name' | sort -u)
+
+            # CORE-CHECK GUARD (#1543): if ANY core check has appeared then
+            # ci.yml is running for this PR (it is not a docs-only PR), so
+            # ALL core checks are expected — keep waiting until every one of
+            # them has registered. If NONE have appeared the PR is docs-only
+            # (ci.yml is paths-ignore-filtered out) and the guard is a no-op,
+            # so a legitimately light docs PR is never blocked.
+            missing_core=""
+            any_core_seen=false
+            if [ -n "$required_checks" ]; then
+              while IFS= read -r rc; do
+                [ -z "$rc" ] && continue
+                if echo "$observed_names" | grep -qxF "$rc"; then
+                  any_core_seen=true
+                else
+                  missing_core="${missing_core}${rc}"$'\n'
+                fi
+              done <<< "$required_checks"
+            fi
+            # Only enforce the guard once ci.yml has shown its hand.
+            if [ "$any_core_seen" != true ]; then
+              missing_core=""
+            fi
+
+            # `action_required` (#1543) is a fork-PR awaiting-maintainer-
+            # approval state. GitHub reports it with `status: completed,
+            # conclusion: action_required`, so it slips past the bare
+            # `status != "completed"` filter. Treat it as PENDING-equivalent:
+            # keep waiting (a maintainer may approve it) rather than letting
+            # the loop break and the `failed` set flip the gate red.
+            pending=$(echo "$others" | jq -r \
+              'select(.status != "completed" or .conclusion == "action_required") | .name')
+
+            # ADVISORY checks are NOT waited on (#2013). An advisory check
+            # (e.g. the slow `Coverage (advisory)` job) cannot affect the
+            # verdict, so the gate must not block on it either — if it hangs
+            # past the deadline the gate would otherwise time out red even
+            # though the check is non-gating. Drop advisory names from the
+            # `pending` set so the loop can break once every NON-advisory
+            # check has finished; the advisory job may keep running.
+            if [ -n "$pending" ] && [ -n "$advisory_checks" ]; then
+              non_advisory_pending=""
+              while IFS= read -r pname; do
+                [ -z "$pname" ] && continue
+                is_advisory=false
+                while IFS= read -r adv; do
+                  [ -z "$adv" ] && continue
+                  case "$pname" in
+                    *"$adv"*) is_advisory=true; break ;;
+                  esac
+                done <<< "$advisory_checks"
+                [ "$is_advisory" = true ] || \
+                  non_advisory_pending="${non_advisory_pending}${pname}"$'\n'
+              done <<< "$pending"
+              pending=$(printf '%s\n' "$non_advisory_pending" | sed '/^[[:space:]]*$/d')
+            fi
+
+            if [ -z "$pending" ] && [ -z "$missing_core" ] && [ "$seen_any_other" = true ]; then
+              break
+            fi
+
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::error::Timed out waiting for CI checks to complete."
+              if [ -n "$pending" ]; then
+                echo "  Still running / awaiting approval:"
+                echo "$pending" | sort -u | while IFS= read -r n; do echo "    - $n"; done
+              fi
+              if [ -n "$missing_core" ]; then
+                echo "  Expected core checks that never registered:"
+                echo "$missing_core" | sed '/^[[:space:]]*$/d' | sort -u \
+                  | while IFS= read -r n; do echo "    - $n"; done
+              fi
+              exit 1
+            fi
+
+            if [ -n "$pending" ]; then
+              echo "Waiting for checks to finish (running, or fork PR awaiting approval):"
+              echo "$pending" | sort -u | while IFS= read -r n; do echo "  - $n"; done
+            fi
+            if [ -n "$missing_core" ]; then
+              echo "Waiting for expected core checks to register:"
+              echo "$missing_core" | sed '/^[[:space:]]*$/d' | sort -u \
+                | while IFS= read -r n; do echo "  - $n"; done
+            fi
+            sleep 20
+          done
+
+          echo ""
+          echo "All other check runs completed. Conclusions:"
+          echo "$others" | jq -r '"  - \(.name): \(.conclusion)"' | sort -u
+
+          # A real failure flips the gate red. `skipped`/`neutral`/`success`
+          # all pass — path-filtered-out jobs report `skipped`.
+          #
+          # `stale` is NOT treated as a failure: GitHub marks a check run
+          # `stale` when a newer commit (or `cancel-in-progress`) supersedes
+          # its run. The current head SHA always gets a fresh run, so a
+          # `stale` conclusion on this SHA's checks is noise, not a defect —
+          # treating it as red would flip `CI Gate` red on an otherwise
+          # green PR.
+          #
+          # `action_required` is NOT treated as a failure (#1543): it is the
+          # fork-PR awaiting-maintainer-approval state, handled as pending in
+          # the wait loop above. The loop only breaks once no check is in
+          # `action_required` any more, so it cannot reach this set — but it
+          # is excluded here too for defence in depth.
+          #
+          # ADVISORY EXCLUSION (#1984): a check run whose name CONTAINS any
+          # ADVISORY_CHECKS substring is dropped from the failure decision
+          # for EVERY conclusion (`failure`/`cancelled`/`timed_out` all
+          # included). An advisory check — e.g. `Coverage (advisory)` — that
+          # is concurrency-CANCELLED must not red-light the gate.
+          #
+          # The actual pass/fail decision is delegated to the standalone
+          # `.github/scripts/ci-gate-aggregate.sh` so it is unit-tested in
+          # isolation (test-ci-gate-aggregation.sh covers the #1984
+          # CANCELLED-advisory case). The helper takes `<conclusion>\t<name>`
+          # on stdin, `ADVISORY_CHECKS` from the env, prints the gating
+          # failures, and exits 0 (pass) / 1 (fail).
+          set +e
+          failed=$(echo "$others" \
+            | jq -r '[.conclusion // "", .name] | @tsv' \
+            | ADVISORY_CHECKS="$advisory_checks" bash .github/scripts/ci-gate-aggregate.sh)
+          gate_rc=$?
+          set -e
+
+          if [ "$gate_rc" -ne 0 ]; then
+            echo ""
+            echo "::error::One or more required CI checks failed:"
+            echo "$failed" | sed '/^[[:space:]]*$/d' | sort -u \
+              | while IFS= read -r n; do echo "  - $n"; done
+            exit 1
+          fi
+
+          echo ""
+          echo "CI Gate passed — every CI check succeeded or was skipped."

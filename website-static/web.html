@@ -1,0 +1,1343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https://www.googletagmanager.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' blob: https://www.google-analytics.com https://*.google-analytics.com https://*.analytics.google.com https://cdn.jsdelivr.net https://api.sketchfab.com https://media.sketchfab.com; frame-src https://app.rerun.io; worker-src 'self' blob:; base-uri 'self'; object-src 'none'">
+  <script>
+    (function() {
+      try {
+        var t = localStorage.getItem('sceneview-theme');
+        if (t !== 'dark' && t !== 'light') {
+          t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', t);
+      } catch(e) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    })();
+  </script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SceneView Web — One Line 3D for the Web</title>
+  <meta name="description" content="SceneView Web: the lightest way to add 3D to any website. One script tag, one function call, powered by Filament.js WASM. 25KB vs Three.js 600KB.">
+  <meta name="keywords" content="SceneView Web, 3D web, JavaScript 3D, Filament.js, WASM 3D, glTF viewer, GLB viewer, lightweight 3D, model viewer, web 3D library">
+  <meta name="author" content="SceneView">
+  <meta name="robots" content="index, follow">
+  <meta name="theme-color" content="#005bc1">
+
+  <link rel="canonical" href="https://sceneview.github.io/web.html">
+
+  <meta property="og:title" content="SceneView Web — One Line 3D for the Web">
+  <meta property="og:description" content="The lightest way to add 3D to any website. One script tag, one function call. 25KB library powered by Filament.js WASM.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://sceneview.github.io/web.html">
+  <meta property="og:site_name" content="SceneView">
+  <meta property="og:locale" content="en_US">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="SceneView Web — One Line 3D for the Web">
+  <meta name="twitter:description" content="The lightest way to add 3D to any website. One script tag, one function call. 25KB library powered by Filament.js WASM.">
+  <meta name="twitter:image" content="https://sceneview.github.io/og-image.png">
+
+  <meta property="og:image" content="https://sceneview.github.io/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="SceneView Web — 3D for the Web">
+
+  <link rel="preload" href="styles.css" as="style">
+  <link rel="preload" href="js/filament/filament.js" as="script">
+  <link rel="preload" href="js/sceneview.js?v=4.19.0" as="script">
+
+  <!-- Filament.js v1.70.2 WASM engine (required by SceneView Web) -->
+  <script src="js/filament/filament.js"></script>
+  <!-- SceneView Web library -->
+  <script src="js/sceneview.js?v=4.19.0"></script>
+
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="stylesheet" href="styles.css">
+
+  <style>
+    /* ===== PAGE-SPECIFIC: SceneView Web ===== */
+
+    /* Hero */
+    .web-hero {
+      padding-top: calc(var(--nav-height) + 64px);
+      padding-bottom: 96px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .web-hero::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse 80% 60% at 50% 20%, rgba(0,91,193,0.1) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    [data-theme="dark"] .web-hero::before {
+      background: radial-gradient(ellipse 80% 60% at 50% 20%, rgba(141,179,255,0.08) 0%, transparent 70%);
+    }
+
+    .web-hero__container {
+      max-width: var(--container-max);
+      margin: 0 auto;
+      padding: 0 var(--container-padding);
+    }
+
+    .web-hero__badge {
+      display: inline-block;
+      padding: 6px 16px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--color-primary);
+      background: rgba(0, 91, 193, 0.08);
+      border-radius: 9999px;
+      margin-bottom: 24px;
+    }
+
+    [data-theme="dark"] .web-hero__badge {
+      background: rgba(121, 192, 255, 0.1);
+    }
+
+    .web-hero__title {
+      font-size: clamp(2.5rem, 6vw, 4rem);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1.08;
+      background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-tertiary) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 16px;
+    }
+
+    .web-hero__subtitle {
+      font-size: clamp(1.1rem, 2.5vw, 1.35rem);
+      color: var(--color-on-surface-variant);
+      max-width: 640px;
+      margin: 0 auto 40px;
+      line-height: 1.7;
+    }
+
+    .web-hero__actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      justify-content: center;
+      margin-bottom: 48px;
+    }
+
+    .web-hero__btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 1rem;
+      padding: 14px 28px;
+      border-radius: 12px;
+      transition: transform var(--duration-short) var(--ease-spring), box-shadow var(--duration-short);
+    }
+
+    .web-hero__btn:active {
+      transform: scale(0.95);
+    }
+
+    .web-hero__btn--primary {
+      background: var(--color-primary);
+      color: var(--color-on-primary);
+    }
+
+    .web-hero__btn--primary:hover {
+      transform: scale(1.03);
+      box-shadow: var(--shadow-xl);
+    }
+
+    .web-hero__btn--outline {
+      border: 2px solid var(--color-outline-variant);
+      color: var(--color-on-surface);
+    }
+
+    .web-hero__btn--outline:hover {
+      border-color: var(--color-primary);
+      color: var(--color-primary);
+    }
+
+    .web-hero__btn .material-symbols-outlined {
+      font-size: 20px;
+    }
+
+    /* Hero code snippet */
+    .web-hero__code {
+      background: #0f172a;
+      border-radius: 12px;
+      padding: 24px 32px;
+      font-family: var(--font-mono);
+      font-size: clamp(0.78rem, 1.5vw, 0.9rem);
+      line-height: 1.8;
+      color: rgba(203, 213, 225, 1);
+      box-shadow: var(--shadow-xl);
+      max-width: 680px;
+      margin: 0 auto;
+      overflow-x: auto;
+      text-align: left;
+      border: 1px solid rgba(48, 54, 61, 0.5);
+    }
+
+    .web-hero__code .syn-comment { color: rgba(148, 163, 184, 0.6); }
+    .web-hero__code .syn-string { color: #4ade80; }
+    .web-hero__code .syn-fn { color: #60a5fa; }
+    .web-hero__code .syn-tag { color: #f472b6; }
+
+    /* Live demo section */
+    .web-demo {
+      padding: 96px 0;
+      background: var(--color-surface-container-low);
+    }
+
+    .web-demo__container {
+      max-width: var(--container-max);
+      margin: 0 auto;
+      padding: 0 var(--container-padding);
+    }
+
+    .web-demo__header {
+      text-align: center;
+      margin-bottom: 48px;
+    }
+
+    .web-demo__title {
+      font-size: clamp(2rem, 4vw, 3rem);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      margin-bottom: 16px;
+    }
+
+    .web-demo__subtitle {
+      font-size: 1.125rem;
+      color: var(--color-on-surface-variant);
+    }
+
+    .web-demo__canvas-wrap {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 10;
+      max-width: 720px;
+      margin: 0 auto;
+      border-radius: 16px;
+      overflow: hidden;
+      background: #0d1117;
+      box-shadow: var(--shadow-xl);
+      border: 1px solid rgba(48, 54, 61, 0.5);
+    }
+
+    .web-demo__canvas-wrap canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      cursor: grab;
+    }
+
+    .web-demo__canvas-wrap canvas:active { cursor: grabbing; }
+
+    .web-demo__loading {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #0d1117;
+      z-index: 10;
+      transition: opacity 0.5s;
+    }
+
+    .web-demo__loading.hidden { opacity: 0; pointer-events: none; }
+
+    .web-demo__spinner {
+      width: 36px;
+      height: 36px;
+      border: 3px solid rgba(121, 192, 255, 0.2);
+      border-top-color: var(--color-primary);
+      border-radius: 50%;
+      animation: web-spin 0.8s linear infinite;
+    }
+
+    @keyframes web-spin { to { transform: rotate(360deg); } }
+
+    .web-demo__badge {
+      position: absolute;
+      bottom: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 5px 14px;
+      border-radius: 9999px;
+      background: rgba(121, 192, 255, 0.12);
+      border: 1px solid rgba(121, 192, 255, 0.25);
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 0.75rem;
+      font-weight: 600;
+      backdrop-filter: blur(8px);
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    .web-demo__hint {
+      text-align: center;
+      font-size: 0.875rem;
+      color: var(--color-on-surface-variant);
+      margin-top: 16px;
+    }
+
+    /* Comparison section */
+    .web-compare {
+      padding: 96px 0;
+    }
+
+    .web-compare__container {
+      max-width: var(--container-max);
+      margin: 0 auto;
+      padding: 0 var(--container-padding);
+    }
+
+    .web-compare__header {
+      text-align: center;
+      margin-bottom: 64px;
+    }
+
+    .web-compare__title {
+      font-size: clamp(2rem, 4vw, 3rem);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      margin-bottom: 16px;
+    }
+
+    .web-compare__subtitle {
+      font-size: 1.125rem;
+      color: var(--color-on-surface-variant);
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .web-compare__table {
+      width: 100%;
+      max-width: 900px;
+      margin: 0 auto;
+      border-collapse: collapse;
+      font-size: 0.9375rem;
+    }
+
+    .web-compare__table th,
+    .web-compare__table td {
+      padding: 16px 20px;
+      text-align: left;
+      border-bottom: 1px solid var(--color-outline);
+    }
+
+    .web-compare__table thead th {
+      font-weight: 700;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--color-on-surface-variant);
+    }
+
+    .web-compare__table tbody td:first-child {
+      font-weight: 600;
+    }
+
+    .web-compare__table .web-compare__highlight {
+      color: var(--color-primary);
+      font-weight: 700;
+    }
+
+    .web-compare__table .web-compare__dim {
+      color: var(--color-on-surface-variant);
+    }
+
+    /* Features grid */
+    .web-features {
+      padding: 96px 0;
+      background: var(--color-surface-container-low);
+    }
+
+    .web-features__container {
+      max-width: var(--container-max);
+      margin: 0 auto;
+      padding: 0 var(--container-padding);
+    }
+
+    .web-features__header {
+      margin-bottom: 64px;
+    }
+
+    .web-features__title {
+      font-size: clamp(1.875rem, 4vw, 3rem);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      margin-bottom: 16px;
+    }
+
+    .web-features__accent-bar {
+      height: 6px;
+      width: 96px;
+      background: var(--color-primary);
+      border-radius: 9999px;
+    }
+
+    .web-features__grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+    }
+
+    .web-feature-card {
+      background: var(--color-surface-container-lowest);
+      padding: 32px;
+      border-radius: 12px;
+      box-shadow: var(--shadow-card);
+      transition: transform var(--duration-medium) var(--ease-spring);
+    }
+
+    .web-feature-card:hover {
+      transform: translateY(-4px);
+    }
+
+    .web-feature-card__icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 24px;
+    }
+
+    .web-feature-card__icon .material-symbols-outlined {
+      font-size: 24px;
+    }
+
+    .web-feature-card__icon--primary {
+      background: var(--color-primary-container);
+      color: var(--color-primary);
+    }
+
+    [data-theme="dark"] .web-feature-card__icon--primary {
+      background: rgba(0, 91, 193, 0.2);
+      color: var(--color-primary);
+    }
+
+    .web-feature-card__icon--secondary {
+      background: var(--color-secondary-container);
+      color: var(--color-secondary);
+    }
+
+    [data-theme="dark"] .web-feature-card__icon--secondary {
+      background: rgba(0, 94, 184, 0.2);
+      color: var(--color-secondary);
+    }
+
+    .web-feature-card__icon--tertiary {
+      background: var(--color-tertiary-container);
+      color: var(--color-tertiary);
+    }
+
+    [data-theme="dark"] .web-feature-card__icon--tertiary {
+      background: rgba(100, 70, 205, 0.2);
+      color: var(--color-tertiary);
+    }
+
+    .web-feature-card__title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 12px;
+      letter-spacing: -0.01em;
+    }
+
+    .web-feature-card__text {
+      color: var(--color-on-surface-variant);
+      line-height: 1.7;
+      font-size: 0.9375rem;
+    }
+
+    /* Install section */
+    .web-install {
+      padding: 96px 0;
+    }
+
+    .web-install__container {
+      max-width: var(--container-max);
+      margin: 0 auto;
+      padding: 0 var(--container-padding);
+    }
+
+    .web-install__header {
+      text-align: center;
+      margin-bottom: 48px;
+    }
+
+    .web-install__title {
+      font-size: clamp(2rem, 4vw, 3rem);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      margin-bottom: 16px;
+    }
+
+    .web-install__subtitle {
+      font-size: 1.125rem;
+      color: var(--color-on-surface-variant);
+    }
+
+    .web-install__grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 24px;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    .web-install-card {
+      background: var(--color-surface-container-lowest);
+      border: 1px solid var(--color-outline-variant);
+      border-radius: 16px;
+      padding: 32px;
+      box-shadow: var(--shadow-card);
+      transition: transform var(--duration-medium) var(--ease-spring);
+    }
+
+    .web-install-card:hover {
+      transform: translateY(-2px);
+    }
+
+    .web-install-card__label {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--color-primary);
+      margin-bottom: 12px;
+    }
+
+    .web-install-card__code {
+      background: #0f172a;
+      color: rgba(203, 213, 225, 1);
+      padding: 16px 20px;
+      border-radius: 8px;
+      font-family: var(--font-mono);
+      font-size: 0.8125rem;
+      line-height: 1.7;
+      overflow-x: auto;
+      white-space: pre;
+      border: 1px solid rgba(48, 54, 61, 0.5);
+    }
+
+    /* API reference */
+    .web-api {
+      padding: 96px 0;
+      background: var(--color-surface-container-low);
+    }
+
+    .web-api__container {
+      max-width: var(--container-max);
+      margin: 0 auto;
+      padding: 0 var(--container-padding);
+    }
+
+    .web-api__header {
+      text-align: center;
+      margin-bottom: 64px;
+    }
+
+    .web-api__title {
+      font-size: clamp(2rem, 4vw, 3rem);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      margin-bottom: 16px;
+    }
+
+    .web-api__subtitle {
+      font-size: 1.125rem;
+      color: var(--color-on-surface-variant);
+    }
+
+    .web-api__grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 24px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    .web-api-card {
+      background: var(--color-surface-container-lowest);
+      border: 1px solid var(--color-outline-variant);
+      border-radius: 16px;
+      padding: 32px;
+      box-shadow: var(--shadow-card);
+      transition: transform var(--duration-medium) var(--ease-spring),
+                  box-shadow var(--duration-medium) var(--ease-expressive);
+    }
+
+    .web-api-card:hover {
+      box-shadow: 0 16px 40px rgba(30, 50, 86, 0.1);
+      transform: translateY(-4px);
+    }
+
+    [data-theme="dark"] .web-api-card:hover {
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    }
+
+    .web-api-card__name {
+      font-family: var(--font-mono);
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--color-primary);
+      margin-bottom: 4px;
+    }
+
+    .web-api-card__sig {
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: var(--color-on-surface-variant);
+      margin-bottom: 12px;
+      opacity: 0.7;
+    }
+
+    .web-api-card__desc {
+      font-size: 0.9375rem;
+      color: var(--color-on-surface-variant);
+      line-height: 1.7;
+    }
+
+    .web-api-card__desc code {
+      font-family: var(--font-mono);
+      font-size: 0.85em;
+      background: rgba(0, 91, 193, 0.06);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: var(--color-primary);
+    }
+
+    [data-theme="dark"] .web-api-card__desc code {
+      background: rgba(121, 192, 255, 0.08);
+    }
+
+    /* Browser compatibility */
+    .web-compat {
+      padding: 96px 0;
+    }
+
+    .web-compat__container {
+      max-width: var(--container-max);
+      margin: 0 auto;
+      padding: 0 var(--container-padding);
+    }
+
+    .web-compat__header {
+      text-align: center;
+      margin-bottom: 64px;
+    }
+
+    .web-compat__title {
+      font-size: clamp(2rem, 4vw, 3rem);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      margin-bottom: 16px;
+    }
+
+    .web-compat__subtitle {
+      font-size: 1.125rem;
+      color: var(--color-on-surface-variant);
+    }
+
+    .web-compat__grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 24px;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .web-compat-card {
+      text-align: center;
+      padding: 32px 16px;
+      background: var(--color-surface-container-lowest);
+      border-radius: 16px;
+      box-shadow: var(--shadow-card);
+    }
+
+    .web-compat-card__icon {
+      font-size: 2.5rem;
+      margin-bottom: 12px;
+    }
+
+    .web-compat-card__name {
+      font-weight: 700;
+      font-size: 1rem;
+      margin-bottom: 4px;
+    }
+
+    .web-compat-card__status {
+      font-size: 0.8125rem;
+      font-weight: 600;
+    }
+
+    .web-compat-card__status--supported {
+      color: var(--color-status-stable);
+    }
+
+    .web-compat-card__status--partial {
+      color: var(--color-status-alpha);
+    }
+
+    /* Powered by badge */
+    .web-powered {
+      padding: 48px 0;
+      text-align: center;
+    }
+
+    .web-powered__container {
+      max-width: var(--container-max);
+      margin: 0 auto;
+      padding: 0 var(--container-padding);
+    }
+
+    .web-powered__inner {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 0.9375rem;
+      color: var(--color-on-surface-variant);
+      font-weight: 500;
+    }
+
+    .web-powered__tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      background: rgba(0, 91, 193, 0.08);
+      color: var(--color-primary);
+      font-size: 0.8125rem;
+      font-weight: 700;
+    }
+
+    [data-theme="dark"] .web-powered__tag {
+      background: rgba(121, 192, 255, 0.1);
+    }
+
+    /* ===== RESPONSIVE ===== */
+    @media (max-width: 1024px) {
+      .web-features__grid { grid-template-columns: repeat(2, 1fr); }
+      .web-compat__grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @media (max-width: 768px) {
+      .web-hero { padding-top: calc(var(--nav-height) + 32px); padding-bottom: 64px; }
+      .web-demo, .web-compare, .web-features, .web-install, .web-api, .web-compat { padding: 64px 0; }
+      .web-features__grid { grid-template-columns: 1fr; }
+      .web-install__grid { grid-template-columns: 1fr; }
+      .web-api__grid { grid-template-columns: 1fr; }
+      .web-compat__grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @media (max-width: 600px) {
+      .web-hero__actions { flex-direction: column; align-items: center; }
+      .web-hero__btn { width: 100%; justify-content: center; }
+      .web-compat__grid { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 480px) {
+      .web-hero__title { font-size: 2.25rem; }
+      .web-demo, .web-compare, .web-features, .web-install, .web-api, .web-compat { padding: 48px 0; }
+    }
+  </style>
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "SceneView Web",
+    "description": "The lightest way to add 3D to any website. One script tag, one function call. Powered by Filament.js WASM.",
+    "url": "https://sceneview.github.io/web.html",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Web",
+    "softwareVersion": "4.19.0",
+    "license": "https://github.com/sceneview/sceneview/blob/main/LICENSE",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "author": {
+      "@type": "Organization",
+      "name": "SceneView",
+      "url": "https://github.com/sceneview"
+    },
+    "codeRepository": "https://github.com/sceneview/sceneview",
+    "programmingLanguage": "JavaScript"
+  }
+  </script>
+  <link href="assets/fonts/fonts.css" rel="stylesheet">
+</head>
+<body>
+
+  <!-- ===== NAVIGATION ===== -->
+  <nav class="nav" id="nav">
+    <div class="nav__container">
+      <a href="/" class="nav__brand" aria-label="SceneView SDK — home">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="28" height="28" aria-hidden="true" style="flex-shrink:0">
+          <defs>
+            <linearGradient id="navTopGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8AB4F8"/><stop offset="100%" stop-color="#42A5F5"/></linearGradient>
+            <linearGradient id="navRightGrad" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#4A90D9"/><stop offset="100%" stop-color="#005BC1"/></linearGradient>
+            <linearGradient id="navLeftGrad" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#005BC1"/><stop offset="100%" stop-color="#0D47A1"/></linearGradient>
+          </defs>
+          <polygon points="256,272 122,194 122,340 256,418" fill="url(#navLeftGrad)"/>
+          <polygon points="256,272 390,194 390,340 256,418" fill="url(#navRightGrad)"/>
+          <polygon points="256,126 390,204 256,282 122,204" fill="url(#navTopGrad)"/>
+          <polyline points="96,120 96,82 134,82" fill="none" stroke="#005BC1" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+          <polyline points="416,120 416,82 378,82" fill="none" stroke="#005BC1" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+          <polyline points="96,392 96,430 134,430" fill="none" stroke="#005BC1" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+          <polyline points="416,392 416,430 378,430" fill="none" stroke="#005BC1" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>SceneView SDK</span>
+      </a>
+
+      <div class="nav__links" id="navLinks">
+        <a href="/#features" class="nav__link">Features</a>
+        <a href="/showcase.html" class="nav__link">Showcase</a>
+        <a href="/playground.html" class="nav__link">Playground</a>
+        <a href="/docs.html" class="nav__link" target="_blank" rel="noopener">Docs</a>
+        <a href="https://sceneview-mcp.mcp-tools-lab.workers.dev/pricing" class="nav__link" target="_blank" rel="noopener">Pricing</a>
+        <button class="nav__theme-toggle" id="themeToggle" aria-label="Toggle dark mode">
+          <svg class="icon-sun" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+          </svg>
+          <svg class="icon-moon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="nav__actions">
+        <a href="https://github.com/sceneview/sceneview" class="nav__icon-btn" target="_blank" rel="noopener" aria-label="View on GitHub">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+          </svg>
+        </a>
+        <button class="nav__hamburger nav__hamburger--mobile" id="hamburgerMobile" aria-label="Toggle menu">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <main>
+  <!-- ===== HERO ===== -->
+  <section class="web-hero">
+    <div class="web-hero__container">
+      <span class="web-hero__badge">Kotlin/JS + Filament.js WASM</span>
+      <h1 class="web-hero__title">One Line 3D for the Web</h1>
+      <p class="web-hero__subtitle">
+        The lightest way to add interactive 3D models to any website.
+        One script tag. One function call. Powered by the same Filament engine as Android SceneView.
+      </p>
+
+      <div class="web-hero__actions">
+        <a href="#install" class="web-hero__btn web-hero__btn--primary">
+          <span class="material-symbols-outlined">download</span>
+          Get started
+        </a>
+        <a href="https://github.com/sceneview/sceneview/tree/main/sceneview-web" class="web-hero__btn web-hero__btn--outline" target="_blank" rel="noopener">
+          <span class="material-symbols-outlined">code</span>
+          GitHub
+        </a>
+        <a href="https://www.npmjs.com/package/sceneview-web" class="web-hero__btn web-hero__btn--outline" target="_blank" rel="noopener">
+          <span class="material-symbols-outlined">package_2</span>
+          npm
+        </a>
+      </div>
+
+      <div class="web-hero__code">
+<span class="syn-comment">&lt;!-- That's it. Two lines. --&gt;</span>
+<span class="syn-tag">&lt;script</span> src="<span class="syn-string">https://cdn.jsdelivr.net/npm/sceneview-web@4.19.0/sceneview-web.js</span>"<span class="syn-tag">&gt;&lt;/script&gt;</span>
+<span class="syn-tag">&lt;script&gt;</span> <span class="syn-fn">SceneView.modelViewer</span>(<span class="syn-string">"canvas"</span>, <span class="syn-string">"model.glb"</span>) <span class="syn-tag">&lt;/script&gt;</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== LIVE DEMO ===== -->
+  <section class="web-demo" id="demo">
+    <div class="web-demo__container">
+      <div class="web-demo__header">
+        <h2 class="web-demo__title">Live demo</h2>
+        <p class="web-demo__subtitle">
+          The DamagedHelmet model rendered in real-time with Filament.js WASM. Drag to orbit. Scroll to zoom.
+        </p>
+      </div>
+
+      <div class="web-demo__canvas-wrap">
+        <div class="web-demo__loading" id="demoLoading">
+          <div class="web-demo__spinner"></div>
+        </div>
+        <canvas id="demoCanvas"></canvas>
+        <div class="web-demo__badge">
+          <span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle;">bolt</span>
+          Filament.js WASM
+        </div>
+      </div>
+      <p class="web-demo__hint">Powered by the same Filament engine used in Android SceneView</p>
+    </div>
+  </section>
+
+  <!-- ===== WHY SCENEVIEW WEB ===== -->
+  <section class="web-compare" id="compare">
+    <div class="web-compare__container">
+      <div class="web-compare__header">
+        <h2 class="web-compare__title">Why SceneView Web?</h2>
+        <p class="web-compare__subtitle">
+          Production-quality rendering at a fraction of the bundle size.
+          The same Filament engine that powers Android SceneView.
+        </p>
+      </div>
+
+      <table class="web-compare__table">
+        <thead>
+          <tr>
+            <th>Feature</th>
+            <th>SceneView Web</th>
+            <th>Three.js</th>
+            <th>model-viewer</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Library size</td>
+            <td class="web-compare__highlight">~25 KB</td>
+            <td class="web-compare__dim">~600 KB</td>
+            <td class="web-compare__dim">~200 KB</td>
+          </tr>
+          <tr>
+            <td>Rendering engine</td>
+            <td class="web-compare__highlight">Filament (WASM)</td>
+            <td class="web-compare__dim">Custom WebGL</td>
+            <td class="web-compare__dim">Three.js</td>
+          </tr>
+          <tr>
+            <td>PBR quality</td>
+            <td class="web-compare__highlight">Production (matches Android)</td>
+            <td class="web-compare__dim">Good</td>
+            <td class="web-compare__dim">Good</td>
+          </tr>
+          <tr>
+            <td>Setup complexity</td>
+            <td class="web-compare__highlight">1 function call</td>
+            <td class="web-compare__dim">~50 lines boilerplate</td>
+            <td class="web-compare__dim">1 HTML tag</td>
+          </tr>
+          <tr>
+            <td>glTF / GLB</td>
+            <td class="web-compare__highlight">Native</td>
+            <td class="web-compare__dim">Plugin (GLTFLoader)</td>
+            <td class="web-compare__dim">Native</td>
+          </tr>
+          <tr>
+            <td>Auto-rotate / orbit</td>
+            <td class="web-compare__highlight">Built-in</td>
+            <td class="web-compare__dim">Manual (OrbitControls)</td>
+            <td class="web-compare__dim">Built-in</td>
+          </tr>
+          <tr>
+            <td>Programmatic API</td>
+            <td class="web-compare__highlight">Full JS API</td>
+            <td class="web-compare__dim">Full JS API</td>
+            <td class="web-compare__dim">Limited (attributes)</td>
+          </tr>
+          <tr>
+            <td>WebXR AR/VR</td>
+            <td class="web-compare__dim">Planned</td>
+            <td class="web-compare__dim">Yes</td>
+            <td class="web-compare__dim">AR only</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ===== FEATURES ===== -->
+  <section class="web-features" id="features">
+    <div class="web-features__container">
+      <div class="web-features__header">
+        <h2 class="web-features__title">Features</h2>
+        <div class="web-features__accent-bar"></div>
+      </div>
+
+      <div class="web-features__grid">
+        <div class="web-feature-card reveal">
+          <div class="web-feature-card__icon web-feature-card__icon--primary">
+            <span class="material-symbols-outlined">bolt</span>
+          </div>
+          <h3 class="web-feature-card__title">Filament.js WASM</h3>
+          <p class="web-feature-card__text">
+            Production-quality PBR rendering via Google Filament compiled to WebAssembly.
+            The same engine powering Android SceneView, now in the browser.
+          </p>
+        </div>
+
+        <div class="web-feature-card reveal">
+          <div class="web-feature-card__icon web-feature-card__icon--secondary">
+            <span class="material-symbols-outlined">code</span>
+          </div>
+          <h3 class="web-feature-card__title">Kotlin/JS</h3>
+          <p class="web-feature-card__text">
+            Written in Kotlin, compiled to JavaScript. Share types, models, and logic
+            with your Android codebase. Full npm distribution.
+          </p>
+        </div>
+
+        <div class="web-feature-card reveal">
+          <div class="web-feature-card__icon web-feature-card__icon--tertiary">
+            <span class="material-symbols-outlined">deployed_code</span>
+          </div>
+          <h3 class="web-feature-card__title">One function call</h3>
+          <p class="web-feature-card__text">
+            No boilerplate. Call <code>SceneView.modelViewer()</code> and get
+            orbit camera, auto-rotation, IBL lighting, and glTF/GLB loading out of the box.
+          </p>
+        </div>
+
+        <div class="web-feature-card reveal">
+          <div class="web-feature-card__icon web-feature-card__icon--primary">
+            <span class="material-symbols-outlined">view_in_ar</span>
+          </div>
+          <h3 class="web-feature-card__title">WebXR ready</h3>
+          <p class="web-feature-card__text">
+            Built-in support for WebXR AR and VR sessions.
+            Immersive 3D experiences directly in the browser with compatible devices.
+          </p>
+        </div>
+
+        <div class="web-feature-card reveal">
+          <div class="web-feature-card__icon web-feature-card__icon--secondary">
+            <span class="material-symbols-outlined">speed</span>
+          </div>
+          <h3 class="web-feature-card__title">~25 KB lightweight</h3>
+          <p class="web-feature-card__text">
+            The sceneview.js wrapper is only ~25 KB. Filament WASM loads on demand.
+            24x smaller than Three.js for basic model viewing.
+          </p>
+        </div>
+
+        <div class="web-feature-card reveal">
+          <div class="web-feature-card__icon web-feature-card__icon--tertiary">
+            <span class="material-symbols-outlined">palette</span>
+          </div>
+          <h3 class="web-feature-card__title">PBR materials</h3>
+          <p class="web-feature-card__text">
+            Full physically-based rendering with image-based lighting, environment maps,
+            metallic-roughness workflow, and tone-mapped HDR output.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== INSTALL ===== -->
+  <section class="web-install" id="install">
+    <div class="web-install__container">
+      <div class="web-install__header">
+        <h2 class="web-install__title">Install</h2>
+        <p class="web-install__subtitle">Pick whatever fits your stack.</p>
+      </div>
+
+      <div class="web-install__grid">
+        <div class="web-install-card reveal">
+          <div class="web-install-card__label">CDN (fastest)</div>
+          <div class="web-install-card__code">&lt;script src="https://cdn.jsdelivr.net/npm/sceneview-web@4.19.0/sceneview-web.js"&gt;&lt;/script&gt;</div>
+        </div>
+
+        <div class="web-install-card reveal">
+          <div class="web-install-card__label">npm</div>
+          <div class="web-install-card__code">npm install sceneview-web</div>
+        </div>
+
+        <div class="web-install-card reveal">
+          <div class="web-install-card__label">ES Module import</div>
+          <div class="web-install-card__code">import SceneView from "sceneview-web";</div>
+        </div>
+
+        <div class="web-install-card reveal">
+          <div class="web-install-card__label">Script tag + init</div>
+          <div class="web-install-card__code">&lt;canvas id="viewer"&gt;&lt;/canvas&gt;
+&lt;script src="https://cdn.jsdelivr.net/npm/sceneview-web@4.19.0/sceneview-web.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+  SceneView.modelViewer("viewer", "model.glb", {
+    autoRotate: true
+  });
+&lt;/script&gt;</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== API REFERENCE ===== -->
+  <section class="web-api" id="api">
+    <div class="web-api__container">
+      <div class="web-api__header">
+        <h2 class="web-api__title">API reference</h2>
+        <p class="web-api__subtitle">A compact surface that covers model loading, primitives, lights, animation and AR.</p>
+      </div>
+
+      <div class="web-api__grid">
+        <div class="web-api-card reveal">
+          <div class="web-api-card__name">SceneView.modelViewer</div>
+          <div class="web-api-card__sig">modelViewer(canvasOrId, modelUrl, options?)</div>
+          <p class="web-api-card__desc">
+            All-in-one: creates a viewer, loads Filament.js from CDN,
+            loads your glTF/GLB model, sets up orbit camera and auto-rotation.
+            Returns a viewer instance.
+          </p>
+        </div>
+
+        <div class="web-api-card reveal">
+          <div class="web-api-card__name">SceneView.create</div>
+          <div class="web-api-card__sig">create(canvasOrId, options?)</div>
+          <p class="web-api-card__desc">
+            Creates an empty viewer without loading a model.
+            Call <code>loadModel(url)</code> later. Useful when the model URL is dynamic.
+          </p>
+        </div>
+
+        <div class="web-api-card reveal">
+          <div class="web-api-card__name">viewer.loadModel</div>
+          <div class="web-api-card__sig">loadModel(url) &rarr; Promise</div>
+          <p class="web-api-card__desc">
+            Loads a glTF or GLB model from any URL. Replaces the current model.
+            Returns a promise that resolves when the model is ready.
+          </p>
+        </div>
+
+        <div class="web-api-card reveal">
+          <div class="web-api-card__name">viewer.setAutoRotate</div>
+          <div class="web-api-card__sig">setAutoRotate(enabled)</div>
+          <p class="web-api-card__desc">
+            Enables or disables automatic Y-axis rotation.
+            Pauses on user interaction, resumes after idle.
+          </p>
+        </div>
+
+        <div class="web-api-card reveal">
+          <div class="web-api-card__name">viewer.setCameraDistance</div>
+          <div class="web-api-card__sig">setCameraDistance(distance)</div>
+          <p class="web-api-card__desc">
+            Sets the orbit camera distance from the model center.
+            Useful for controlling the initial zoom level.
+          </p>
+        </div>
+
+        <div class="web-api-card reveal">
+          <div class="web-api-card__name">viewer.loadEnvironment</div>
+          <div class="web-api-card__sig">loadEnvironment(ktxUrl, intensity?) &rarr; Promise</div>
+          <p class="web-api-card__desc">
+            Loads a KTX IBL environment for physically-based lighting and reflections.
+            Works with any KTX2 cubemap exported from cmgen or a baked HDR.
+          </p>
+        </div>
+
+        <div class="web-api-card reveal">
+          <div class="web-api-card__name">viewer.addLight</div>
+          <div class="web-api-card__sig">addLight({type, color, intensity, direction, position, falloff})</div>
+          <p class="web-api-card__desc">
+            Adds a <code>directional</code>, <code>point</code>, or <code>spot</code>
+            light to the scene. Returns an entity handle you can pass to
+            <code>removeLight()</code>.
+          </p>
+        </div>
+
+        <div class="web-api-card reveal">
+          <div class="web-api-card__name">viewer.clearLights</div>
+          <div class="web-api-card__sig">clearLights() &rarr; viewer</div>
+          <p class="web-api-card__desc">
+            Removes every light from the scene, including the default 3-point
+            studio rig. Use this when you want a fully custom lighting setup.
+          </p>
+        </div>
+
+        <div class="web-api-card reveal">
+          <div class="web-api-card__name">viewer.createBox / Sphere / Cylinder</div>
+          <div class="web-api-card__sig">createBox(center, [w,h,d], [r,g,b,a])</div>
+          <p class="web-api-card__desc">
+            Procedural primitives built as inline glTF — no external model file needed.
+            Perfect for quick prototypes, physics placeholders, or ground planes.
+          </p>
+        </div>
+
+        <div class="web-api-card reveal">
+          <div class="web-api-card__name">viewer.playAnimation</div>
+          <div class="web-api-card__sig">playAnimation(index=0, loop=true)</div>
+          <p class="web-api-card__desc">
+            Plays a glTF keyframe animation with full skinning and morph-target support.
+            Use <code>stopAnimation()</code> to return to the rest pose.
+          </p>
+        </div>
+
+        <div class="web-api-card reveal">
+          <div class="web-api-card__name">viewer.setBloom</div>
+          <div class="web-api-card__sig">setBloom(true | false | {strength, resolution, threshold})</div>
+          <p class="web-api-card__desc">
+            Toggles the bloom post-processing effect for cinematic highlights
+            on emissive materials. Fine-tune strength and threshold for dramatic looks.
+          </p>
+        </div>
+
+        <div class="web-api-card reveal">
+          <div class="web-api-card__name">viewer.createText / Image / Video</div>
+          <div class="web-api-card__sig">createText({text, fontSize, color, position, billboard})</div>
+          <p class="web-api-card__desc">
+            In-scene HUD elements: rich text billboards, 2D images, and looping
+            videos rendered as world-space quads.
+          </p>
+        </div>
+
+        <div class="web-api-card reveal">
+          <div class="web-api-card__name">viewer.clearScene</div>
+          <div class="web-api-card__sig">clearScene() &rarr; viewer</div>
+          <p class="web-api-card__desc">
+            Removes all loaded models, primitives, and media nodes from the scene.
+            Lights, IBL, and camera are preserved.
+          </p>
+        </div>
+
+        <div class="web-api-card reveal">
+          <div class="web-api-card__name">viewer.dispose</div>
+          <div class="web-api-card__sig">dispose()</div>
+          <p class="web-api-card__desc">
+            Cleans up all GPU resources, removes event listeners,
+            and stops the render loop. Call when removing the viewer.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== BROWSER COMPATIBILITY ===== -->
+  <section class="web-compat" id="compat">
+    <div class="web-compat__container">
+      <div class="web-compat__header">
+        <h2 class="web-compat__title">Browser compatibility</h2>
+        <p class="web-compat__subtitle">
+          SceneView Web requires WebGL2 and WebAssembly support.
+        </p>
+      </div>
+
+      <div class="web-compat__grid">
+        <div class="web-compat-card reveal">
+          <div class="web-compat-card__icon">
+            <span class="material-symbols-outlined" style="font-size:2.5rem;color:var(--color-primary);">public</span>
+          </div>
+          <div class="web-compat-card__name">Chrome</div>
+          <div class="web-compat-card__status web-compat-card__status--supported">Fully supported</div>
+        </div>
+
+        <div class="web-compat-card reveal">
+          <div class="web-compat-card__icon">
+            <span class="material-symbols-outlined" style="font-size:2.5rem;color:var(--color-secondary);">public</span>
+          </div>
+          <div class="web-compat-card__name">Firefox</div>
+          <div class="web-compat-card__status web-compat-card__status--supported">Fully supported</div>
+        </div>
+
+        <div class="web-compat-card reveal">
+          <div class="web-compat-card__icon">
+            <span class="material-symbols-outlined" style="font-size:2.5rem;color:var(--color-tertiary);">public</span>
+          </div>
+          <div class="web-compat-card__name">Edge</div>
+          <div class="web-compat-card__status web-compat-card__status--supported">Fully supported</div>
+        </div>
+
+        <div class="web-compat-card reveal">
+          <div class="web-compat-card__icon">
+            <span class="material-symbols-outlined" style="font-size:2.5rem;color:var(--color-on-surface-variant);">public</span>
+          </div>
+          <div class="web-compat-card__name">Safari</div>
+          <div class="web-compat-card__status web-compat-card__status--partial">WebGL2 (15.2+)</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== POWERED BY ===== -->
+  <section class="web-powered">
+    <div class="web-powered__container">
+      <div class="web-powered__inner">
+        Powered by
+        <span class="web-powered__tag">
+          <span class="material-symbols-outlined" style="font-size:16px;">bolt</span>
+          Filament.js WASM
+        </span>
+        &mdash; the same engine behind Android SceneView
+      </div>
+    </div>
+  </section>
+
+  </main>
+
+  <!-- ===== FOOTER ===== -->
+  <footer class="footer">
+    <div class="footer__container">
+      <div class="footer__grid">
+        <div class="footer__brand-col">
+          <div class="footer__brand-name">SceneView SDK</div>
+          <p class="footer__brand-desc">The architectural logic for building high-performance 3D spatial experiences across all modern platforms.</p>
+          <div class="footer__copyright">&copy; 2026 SceneView SDK. Architectural Logic.</div>
+        </div>
+        <div class="footer__col">
+          <h4 class="footer__col-title">Documentation</h4>
+          <ul class="footer__col-list">
+            <li><a href="/docs.html" target="_blank" rel="noopener">Examples</a></li>
+            <li><a href="/showcase.html">Showcase</a></li>
+          </ul>
+        </div>
+        <div class="footer__col">
+          <h4 class="footer__col-title">Community</h4>
+          <ul class="footer__col-list">
+            <li><a href="https://github.com/sceneview/sceneview" target="_blank" rel="noopener">GitHub</a></li>
+            <li><a href="https://discord.gg/sceneview" target="_blank" rel="noopener">Discord</a></li>
+            <li><a href="https://twitter.com/nicoadams_" target="_blank" rel="noopener">Twitter</a></li>
+          </ul>
+        </div>
+        <div class="footer__col">
+          <h4 class="footer__col-title">Legal</h4>
+          <ul class="footer__col-list">
+            <li><a href="/privacy.html">Privacy</a></li>
+            <li><a href="https://github.com/sceneview/sceneview/blob/main/LICENSE" target="_blank" rel="noopener">Terms</a></li>
+            <li><a href="https://github.com/sceneview/sceneview/blob/main/LICENSE" target="_blank" rel="noopener">License</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+
+  <!-- Live demo initialization -->
+  <script>
+    (function() {
+      var loading = document.getElementById('demoLoading');
+      try {
+        SceneView.modelViewer('demoCanvas',
+          'models/platforms/DamagedHelmet.glb',
+          { autoRotate: true }
+        ).then(function() {
+          if (loading) loading.classList.add('hidden');
+        }).catch(function() {
+          if (loading) loading.innerHTML = '<p style="color:rgba(255,255,255,0.5);font-size:13px;">Could not load demo. Try a WebGL2-capable browser.</p>';
+        });
+      } catch(e) {
+        if (loading) loading.innerHTML = '<p style="color:rgba(255,255,255,0.5);font-size:13px;">Could not load demo. Try a WebGL2-capable browser.</p>';
+      }
+    })();
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,198 @@
+// TODO(module-unification): This module should eventually merge into `sceneview`.
+//  ARCore would become a `compileOnly` dependency in sceneview/build.gradle, and all source
+//  files here would move to sceneview/src/main/java/io/github/sceneview/ar/.
+//  See ARSceneView.kt for the full migration checklist.
+plugins {
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
+    id 'filament-tools-plugin'
+    alias(libs.plugins.dokka)
+    alias(libs.plugins.compose.compiler)
+    id 'jacoco'
+}
+
+// *************************************************************************************************
+// Filament Plugin
+// *************************************************************************************************
+//
+// Needed if you want to generate Materials, Indirect Light (IBL) and Skyboxes.
+//
+// 1) Copy/paste the /buildSrc dir into your project root folder
+// 2) Copy/paste the plugins line above (plugins: { id 'filament-tools-plugin' }) and bellow into
+// your app/module build.gradle
+// 3) Download the Filament tools release archive for your development desktop:
+// Filament release download: https://github.com/google/filament/releases
+// (Choose the corresponding version to the filament_version bellow)
+// 4) Copy/paste the Filament Plugin part from the gradle.properties file to your project
+// 5) Sync Gradle and clean your project
+if (project.properties['filamentPluginEnabled']?.toBoolean()) {
+    filamentTools {
+        // Material generation: .mat -> .filamat
+        materialInputDir = project.layout.projectDirectory.dir("src/main/materials")
+        materialOutputDir = project.layout.projectDirectory.dir("src/main/assets/materials")
+        // IBL and Skybox generation: .hdr -> _ibl.ktx and _skybox.ktx
+        iblInputDir = project.layout.projectDirectory.dir("src/main/environments")
+        iblOutputDir = project.layout.projectDirectory.dir("src/main/assets/environments")
+        iblFormat = "ktx"
+    }
+
+    clean.doFirst {
+        delete "src/main/assets/materials"
+        delete "src/main/assets/environments"
+    }
+}
+// *************************************************************************************************
+
+android {
+    namespace = 'io.github.sceneview.ar'
+
+    // Align native library ELF PT_LOAD segments to 16 KB so consumers' APKs are accepted
+    // by Google Play on 16 KB-page-size devices (Android 15+, enforced by Play since Jan 2026).
+    // Consumers must also add this to their own app-level build.gradle (#2226).
+    experimentalProperties["android.nativeLibraryAlignmentPageSize"] = "16k"
+
+    compileSdk 36
+
+    defaultConfig {
+        minSdk 24
+        targetSdk 36
+
+        consumerProguardFiles "consumer-rules.pro"
+
+        // Instrumented tests live in `src/androidTest/` and exercise real Filament JNI
+        // (see e.g. LightEstimatorConcurrentDestroyTest for the destroy()-race repro
+        // demanded by CORR-B reviewer R1 / umbrella #1094 acceptance #3). Required for
+        // `./gradlew :arsceneview:connectedDebugAndroidTest`.
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // Enable JaCoCo bytecode coverage on debug unit tests so the
+            // `jacocoTestReport` task below can pull an exec file. See #964.
+            testCoverageEnabled true
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
+    }
+    kotlinOptions {
+        jvmTarget = '21'
+    }
+    buildFeatures {
+        compose = true
+    }
+    // Preserve compression of filament files
+    androidResources {
+        noCompress 'filamat', 'ktx'
+    }
+
+    lint {
+        warningsAsErrors = false
+        abortOnError = false
+        checkDependencies = true
+    }
+
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
+        }
+    }
+}
+
+dependencies {
+    // Compose BOM — manages all Compose artifact versions
+    implementation platform(libs.androidx.compose.bom)
+
+    implementation libs.androidx.core.ktx
+    implementation libs.androidx.appcompat
+
+    // Compose
+    implementation libs.androidx.compose.ui
+    implementation libs.androidx.compose.foundation
+
+    // SceneView
+    api project(":sceneview")
+
+    // ARCore
+    api libs.arcore
+
+    // ARCore for Jetpack XR — preview SDK for hand / face tracking on Android XR
+    // headsets and glasses. Declared `compileOnly` so the `io.github.sceneview.ar.xr`
+    // subpackage can reference `androidx.xr.arcore.*` types at compile time WITHOUT
+    // bundling them into the runtime classpath of phone-only consumers. Apps that
+    // target Android XR add `implementation(libs.androidx.xr.arcore)` themselves and
+    // gate any XR code path on `XrFeatures.isAvailable(context)`. See
+    // arsceneview/docs/JETPACK-XR-INTEGRATION.md (#1738) — Slices 2 (#1902) / 3 (#1903).
+    compileOnly libs.androidx.xr.arcore
+
+    // Nearby Connections — backs the optional `NearbyCollaborativeTransport`
+    // reference transport for collaborative AR (#2008). Declared `compileOnly`
+    // so the `io.github.sceneview.ar.collaborative` package can reference
+    // `com.google.android.gms.nearby.*` types at compile time WITHOUT bundling
+    // Play Services into the runtime classpath of apps that never touch
+    // collaborative AR. Apps that use `NearbyCollaborativeTransport` add
+    // `implementation(libs.play.services.nearby)` themselves. The rest of the
+    // collaborative stack stays transport-agnostic.
+    compileOnly libs.play.services.nearby
+
+    // Unit tests (JVM — no device required)
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation libs.robolectric
+    // `NearbyCollaborativeTransport` references `compileOnly` Nearby types, so the
+    // test classpath needs them on `testCompileOnly` for the file to compile under
+    // `testDebugUnitTest`. The unit tests themselves exercise only the SDK-free
+    // payload-framing + peer-roster logic and never instantiate the Nearby client.
+    testCompileOnly libs.play.services.nearby
+    // Virtual-time coroutine testing (runTest / TestDispatcher) — lets
+    // CollaborativeSessionTest drive the session's I/O scope deterministically
+    // instead of racing Dispatchers.Default against a wall-clock timeout (#2091).
+    testImplementation libs.kotlin.coroutines.test
+    // The Xr*Node JVM tests exercise pure-Kotlin mesh/joint math on SceneView's
+    // own `Position` type and never load `androidx.xr.arcore`, so the XR artifact
+    // is intentionally NOT a test dependency — keeping the test classpath identical
+    // to a stock phone build (the negative path that matters for 99% of consumers).
+
+    // Instrumented tests (require a connected device or emulator with ARCore-compatible
+    // Filament. Filament Engine.create() runs JNI, so these can't be Robolectric.)
+    androidTestImplementation libs.androidx.test.junit
+    androidTestImplementation libs.androidx.test.runner
+    androidTestImplementation libs.androidx.test.rules
+}
+
+apply plugin: "com.vanniktech.maven.publish"
+
+// ── JaCoCo coverage report ────────────────────────────────────────────────
+// See `sceneview/build.gradle` for the rationale comment. Same task name
+// (`:arsceneview:jacocoTestReport`) so a top-level `./gradlew
+// jacocoTestReport` runs both modules in parallel.
+jacoco {
+    toolVersion = "0.8.13"
+}
+
+tasks.register('jacocoTestReport', JacocoReport) {
+    dependsOn 'testDebugUnitTest'
+    reports {
+        xml.required = true
+        html.required = true
+    }
+    def fileFilter = [
+        '**/R.class', '**/R$*.class', '**/BuildConfig.*',
+        '**/Manifest*.*', '**/*Test*.*',
+    ]
+    def debugTree = fileTree(dir: "${buildDir}/tmp/kotlin-classes/debug", excludes: fileFilter)
+    def mainSrc = "${projectDir}/src/main/java"
+    sourceDirectories.setFrom(files([mainSrc]))
+    classDirectories.setFrom(files([debugTree]))
+    executionData.setFrom(fileTree(dir: buildDir, includes: [
+        'outputs/unit_test_code_coverage/debugUnitTest/testDebugUnitTest.exec',
+        'jacoco/testDebugUnitTest.exec', // fallback for older AGP
+    ]))
+}

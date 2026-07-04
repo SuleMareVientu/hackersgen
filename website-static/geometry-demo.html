@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https://www.googletagmanager.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' blob: https://www.google-analytics.com https://*.google-analytics.com https://*.analytics.google.com https://cdn.jsdelivr.net https://api.sketchfab.com https://media.sketchfab.com; frame-src https://app.rerun.io; worker-src 'self' blob:; base-uri 'self'; object-src 'none'">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SceneView Geometry — Interactive 3D Showcase</title>
+<meta name="description" content="SceneView procedural 3D geometry renderer. Professional scenes with PBR shading — architecture, product display, data viz, landscapes.">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://sceneview.github.io/geometry-demo.html">
+<meta property="og:title" content="SceneView Geometry — Interactive 3D Showcase">
+<meta property="og:description" content="Professional 3D scenes rendered in the browser with PBR shading. Architecture, product display, data visualization, and landscapes.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://sceneview.github.io/geometry-demo.html">
+<meta property="og:image" content="https://sceneview.github.io/favicon.svg">
+<meta property="og:site_name" content="SceneView">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="SceneView Geometry — Interactive 3D Showcase">
+<meta name="twitter:image" content="https://sceneview.github.io/favicon.svg">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0d1117; font-family: 'Inter', system-ui, sans-serif; }
+  canvas { width: 100%; height: 100%; display: block; cursor: grab; }
+  canvas:active { cursor: grabbing; }
+
+  .badge {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    padding: 6px 16px; border-radius: 20px;
+    background: rgba(26,115,232,0.15); border: 1px solid rgba(26,115,232,0.3);
+    color: rgba(255,255,255,0.8); font-size: 12px; font-weight: 500;
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    pointer-events: none; z-index: 10;
+  }
+  .badge a { color: #4a9af5; text-decoration: none; pointer-events: auto; }
+
+  .info {
+    position: fixed; top: 16px; left: 16px; z-index: 10;
+    color: rgba(255,255,255,0.5); font-size: 11px; line-height: 1.6;
+    pointer-events: none;
+  }
+  .title {
+    position: fixed; top: 16px; right: 16px; z-index: 10;
+    font-size: 18px; font-weight: 700; color: #fff;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+  }
+
+  /* Loading overlay */
+  #loading {
+    position: fixed; inset: 0; z-index: 100;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: #0d1117;
+    transition: opacity 0.6s ease;
+  }
+  #loading.hidden { opacity: 0; pointer-events: none; }
+  .spinner {
+    width: 40px; height: 40px; border: 3px solid rgba(26,115,232,0.2);
+    border-top-color: #4a9af5; border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { color: rgba(255,255,255,0.6); font-size: 13px; margin-top: 14px; }
+
+  /* Controls panel */
+  .controls {
+    position: fixed; bottom: 50px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 8px; align-items: center; z-index: 20;
+    padding: 8px 14px; border-radius: 14px;
+    background: rgba(13,17,23,0.85); border: 1px solid rgba(255,255,255,0.1);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    flex-wrap: wrap; justify-content: center;
+  }
+  .controls select, .controls button {
+    font-family: inherit; font-size: 12px; font-weight: 500;
+    border: 1px solid rgba(255,255,255,0.15); border-radius: 8px;
+    background: rgba(255,255,255,0.08); color: #fff;
+    padding: 6px 12px; cursor: pointer; outline: none;
+    transition: all 0.2s;
+  }
+  .controls select:hover, .controls button:hover {
+    background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.25);
+  }
+  .controls input[type="color"] {
+    width: 30px; height: 30px; border: 2px solid rgba(255,255,255,0.15);
+    border-radius: 8px; cursor: pointer; background: transparent; padding: 1px;
+  }
+  .controls .add-btn {
+    background: rgba(26,115,232,0.5); border-color: rgba(26,115,232,0.6);
+    font-weight: 600;
+  }
+  .controls .add-btn:hover { background: rgba(26,115,232,0.7); }
+  .controls .claude-btn {
+    background: linear-gradient(135deg, rgba(204,119,51,0.6), rgba(180,90,40,0.6));
+    border-color: rgba(204,119,51,0.5); font-weight: 600;
+    display: flex; align-items: center; gap: 5px;
+  }
+  .controls .claude-btn:hover {
+    background: linear-gradient(135deg, rgba(204,119,51,0.8), rgba(180,90,40,0.8));
+  }
+  .controls .reset-btn {
+    background: rgba(255,60,60,0.3); border-color: rgba(255,60,60,0.3);
+    font-size: 11px;
+  }
+  .controls .reset-btn:hover { background: rgba(255,60,60,0.5); }
+  .controls label {
+    color: rgba(255,255,255,0.5); font-size: 11px; display: flex; align-items: center; gap: 4px;
+  }
+  .controls .slider {
+    -webkit-appearance: none; width: 60px; height: 4px;
+    border-radius: 2px; background: rgba(255,255,255,0.15);
+    outline: none;
+  }
+  .controls .slider::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 12px; height: 12px;
+    border-radius: 50%; background: #4a9af5; cursor: pointer;
+  }
+
+  .shape-count {
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.4); font-size: 11px; z-index: 10;
+    pointer-events: none;
+  }
+
+  /* Scene preset buttons */
+  .presets {
+    position: fixed; top: 50px; right: 16px; z-index: 10;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .presets button {
+    font-family: inherit; font-size: 11px; font-weight: 500;
+    border: 1px solid rgba(255,255,255,0.12); border-radius: 8px;
+    background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.7);
+    padding: 5px 10px; cursor: pointer; outline: none;
+    transition: all 0.2s; text-align: right;
+  }
+  .presets button:hover { background: rgba(255,255,255,0.12); color: #fff; }
+  .presets button.active { background: rgba(26,115,232,0.3); border-color: rgba(26,115,232,0.5); color: #fff; }
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <div class="loading-text">Loading scene...</div>
+</div>
+
+<canvas id="c"></canvas>
+<div class="info">Drag to orbit | Scroll to zoom | Add shapes below</div>
+<div class="title">Geometry Demo</div>
+<div class="shape-count" id="shapeCount"></div>
+
+<div class="presets">
+  <button class="active" data-scene="architecture" onclick="loadScene('architecture')">Architecture</button>
+  <button data-scene="product" onclick="loadScene('product')">Product Display</button>
+  <button data-scene="dataviz" onclick="loadScene('dataviz')">Data Viz</button>
+  <button data-scene="landscape" onclick="loadScene('landscape')">Landscape</button>
+</div>
+
+<div class="controls">
+  <select id="shapeType">
+    <option value="cube">Cube</option>
+    <option value="sphere">Sphere</option>
+    <option value="cylinder">Cylinder</option>
+    <option value="cone">Cone</option>
+    <option value="torus">Torus</option>
+    <option value="capsule">Capsule</option>
+    <option value="plane">Plane</option>
+  </select>
+  <input type="color" id="shapeColor" value="#4a9af5" title="Shape color">
+  <label>Metal <input type="range" class="slider" id="metalSlider" min="0" max="100" value="20"></label>
+  <label>Rough <input type="range" class="slider" id="roughSlider" min="0" max="100" value="40"></label>
+  <button class="add-btn" onclick="addUserShape()">+ Add Shape</button>
+  <button class="reset-btn" onclick="loadScene(currentPreset)">Reset</button>
+  <button class="claude-btn" onclick="openClaude()">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Generate with Claude
+  </button>
+</div>
+
+<div class="badge">Powered by <a href="https://sceneview.github.io" target="_blank">SceneView</a> — Procedural 3D Geometry</div>
+
+<script>
+// SceneView Geometry Renderer — procedural 3D shapes with PBR shading
+// Zero dependencies, pure WebGL2, designed for Claude artifacts
+
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', { antialias: true, alpha: false });
+if (!gl) { document.body.innerHTML = '<p style="color:#fff;padding:40px">WebGL2 not supported</p>'; throw new Error('no webgl2'); }
+
+// ── Shaders ──────────────────────────────────────────────────────────────────
+// PBR with 3-point lighting, shadow approximation, and fog
+
+const VS = `#version 300 es
+precision highp float;
+in vec3 aPos;
+in vec3 aNormal;
+uniform mat4 uMVP;
+uniform mat4 uModel;
+uniform mat3 uNormalMatrix;
+out vec3 vNormal;
+out vec3 vWorldPos;
+void main() {
+  vec4 worldPos = uModel * vec4(aPos, 1.0);
+  vWorldPos = worldPos.xyz;
+  vNormal = normalize(uNormalMatrix * aNormal);
+  gl_Position = uMVP * vec4(aPos, 1.0);
+}`;
+
+const FS = `#version 300 es
+precision highp float;
+in vec3 vNormal;
+in vec3 vWorldPos;
+uniform vec3 uCamPos;
+uniform vec3 uBaseColor;
+uniform float uMetallic;
+uniform float uRoughness;
+uniform float uTime;
+out vec4 fragColor;
+
+const float PI = 3.14159265;
+
+// 3-point studio lighting (brighter, more contrast)
+const vec3 KEY_DIR   = normalize(vec3(0.5, 0.85, 0.3));
+const vec3 KEY_COLOR = vec3(4.2, 3.8, 3.2);
+const vec3 FILL_DIR  = normalize(vec3(-0.7, 0.3, -0.5));
+const vec3 FILL_COLOR = vec3(0.7, 0.8, 1.3);
+const vec3 RIM_DIR   = normalize(vec3(-0.2, -0.1, -0.9));
+const vec3 RIM_COLOR = vec3(0.5, 0.5, 0.8);
+
+float D_GGX(float NdotH, float roughness) {
+  float a = roughness * roughness;
+  float a2 = a * a;
+  float d = NdotH * NdotH * (a2 - 1.0) + 1.0;
+  return a2 / (PI * d * d);
+}
+vec3 F_Schlick(float cosTheta, vec3 F0) {
+  return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+float G_Smith(float NdotV, float NdotL, float roughness) {
+  float r = roughness + 1.0;
+  float k = (r * r) / 8.0;
+  float g1 = NdotV / (NdotV * (1.0 - k) + k);
+  float g2 = NdotL / (NdotL * (1.0 - k) + k);
+  return g1 * g2;
+}
+
+vec3 evalLight(vec3 N, vec3 V, vec3 L, vec3 lightColor, vec3 F0, float NdotV) {
+  vec3 H = normalize(V + L);
+  float NdotL = max(dot(N, L), 0.0);
+  float NdotH = max(dot(N, H), 0.0);
+  float HdotV = max(dot(H, V), 0.0);
+  if (NdotL <= 0.0) return vec3(0.0);
+  vec3 F = F_Schlick(HdotV, F0);
+  float D = D_GGX(NdotH, uRoughness);
+  float G = G_Smith(NdotV, NdotL, uRoughness);
+  vec3 spec = (D * F * G) / (4.0 * NdotV * NdotL + 0.001);
+  vec3 kD = (1.0 - F) * (1.0 - uMetallic);
+  vec3 diffuse = kD * uBaseColor / PI;
+  return (diffuse + spec) * lightColor * NdotL;
+}
+
+void main() {
+  vec3 N = normalize(vNormal);
+  vec3 V = normalize(uCamPos - vWorldPos);
+  float NdotV = max(dot(N, V), 0.001);
+  vec3 F0 = mix(vec3(0.04), uBaseColor, uMetallic);
+
+  vec3 color = vec3(0.0);
+  color += evalLight(N, V, KEY_DIR, KEY_COLOR, F0, NdotV);
+  color += evalLight(N, V, FILL_DIR, FILL_COLOR, F0, NdotV);
+  color += evalLight(N, V, RIM_DIR, RIM_COLOR, F0, NdotV);
+
+  // Hemisphere ambient with ground bounce
+  vec3 skyColor = vec3(0.15, 0.2, 0.38);
+  vec3 groundColor = vec3(0.06, 0.05, 0.04);
+  float hemisphere = dot(N, vec3(0, 1, 0)) * 0.5 + 0.5;
+  vec3 ambient = mix(groundColor, skyColor, hemisphere) * uBaseColor * 0.5;
+
+  // Fresnel rim (more pronounced)
+  float rim = pow(1.0 - NdotV, 4.0);
+  ambient += vec3(0.1, 0.15, 0.3) * rim * 0.9;
+
+  // AO approximation
+  float ao = smoothstep(-0.3, 0.5, dot(N, vec3(0, 1, 0))) * 0.3 + 0.7;
+  ambient *= ao;
+
+  // Fake contact shadow: darken near ground
+  float contactShadow = smoothstep(0.0, 0.3, vWorldPos.y);
+  ambient *= mix(0.4, 1.0, contactShadow);
+
+  color += ambient;
+
+  // Environment reflections for ALL surfaces (not just metallic > 0.3)
+  vec3 R = reflect(-V, N);
+  float envUp = max(R.y, 0.0);
+  vec3 envColor = mix(vec3(0.06, 0.04, 0.1), vec3(0.25, 0.45, 0.9), envUp);
+  envColor += vec3(0.85, 0.75, 0.55) * pow(max(dot(R, KEY_DIR), 0.0), 20.0); // sun highlight
+  envColor += vec3(0.3, 0.4, 0.65) * pow(max(dot(R, FILL_DIR), 0.0), 10.0); // fill highlight
+  float envFresnel = pow(1.0 - NdotV, 3.0);
+  float envIntensity = mix(uMetallic * 0.25, 0.7, envFresnel) * (1.0 - uRoughness * 0.85);
+  color += envColor * max(envIntensity, 0.02); // subtle env even on rough dielectrics
+
+  // Distance fog (slightly blue-tinted)
+  float fogDist = length(vWorldPos - uCamPos);
+  float fog = 1.0 - exp(-fogDist * 0.018);
+  vec3 fogColor = vec3(0.04, 0.055, 0.085);
+  color = mix(color, fogColor, fog * 0.5);
+
+  // ACES tone mapping
+  color = color * (2.51 * color + 0.03) / (color * (2.43 * color + 0.59) + 0.14);
+  color = pow(color, vec3(1.0 / 2.2));
+  fragColor = vec4(color, 1.0);
+}`;
+
+// ── Grid shader ──────────────────────────────────────────────────────────────
+
+const GRID_VS = `#version 300 es
+precision highp float;
+in vec3 aPos;
+uniform mat4 uMVP;
+out float vDist;
+out vec2 vXZ;
+void main() {
+  gl_Position = uMVP * vec4(aPos, 1.0);
+  vDist = length(aPos.xz);
+  vXZ = aPos.xz;
+}`;
+const GRID_FS = `#version 300 es
+precision highp float;
+in float vDist;
+in vec2 vXZ;
+out vec4 fragColor;
+void main() {
+  float fade = 1.0 - smoothstep(5.0, 14.0, vDist);
+  float center = 1.0 - smoothstep(0.0, 4.0, vDist);
+  float alpha = (0.05 + center * 0.05) * fade;
+  fragColor = vec4(0.25, 0.45, 0.9, alpha);
+}`;
+
+// ── Shader compilation ───────────────────────────────────────────────────────
+
+function createShader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(s)); return null; }
+  return s;
+}
+function createProgram(vs, fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, vs);
+  gl.attachShader(p, fs);
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.error(gl.getProgramInfoLog(p)); return null; }
+  return p;
+}
+
+const prog = createProgram(createShader(gl.VERTEX_SHADER, VS), createShader(gl.FRAGMENT_SHADER, FS));
+const loc = {
+  aPos: gl.getAttribLocation(prog, 'aPos'),
+  aNormal: gl.getAttribLocation(prog, 'aNormal'),
+  uMVP: gl.getUniformLocation(prog, 'uMVP'),
+  uModel: gl.getUniformLocation(prog, 'uModel'),
+  uNormalMatrix: gl.getUniformLocation(prog, 'uNormalMatrix'),
+  uCamPos: gl.getUniformLocation(prog, 'uCamPos'),
+  uBaseColor: gl.getUniformLocation(prog, 'uBaseColor'),
+  uMetallic: gl.getUniformLocation(prog, 'uMetallic'),
+  uRoughness: gl.getUniformLocation(prog, 'uRoughness'),
+  uTime: gl.getUniformLocation(prog, 'uTime'),
+};
+const gridProg = createProgram(createShader(gl.VERTEX_SHADER, GRID_VS), createShader(gl.FRAGMENT_SHADER, GRID_FS));
+const gridLoc = {
+  aPos: gl.getAttribLocation(gridProg, 'aPos'),
+  uMVP: gl.getUniformLocation(gridProg, 'uMVP'),
+};
+
+// ── Geometry generators ──────────────────────────────────────────────────────
+
+function generateSphere(radius, widthSeg, heightSeg) {
+  const pos = [], nrm = [], idx = [];
+  for (let y = 0; y <= heightSeg; y++) {
+    for (let x = 0; x <= widthSeg; x++) {
+      const u = x / widthSeg, v = y / heightSeg;
+      const theta = u * Math.PI * 2, phi = v * Math.PI;
+      const sp = Math.sin(phi), cp = Math.cos(phi);
+      const st = Math.sin(theta), ct = Math.cos(theta);
+      const nx = sp * ct, ny = cp, nz = sp * st;
+      pos.push(radius * nx, radius * ny, radius * nz);
+      nrm.push(nx, ny, nz);
+    }
+  }
+  for (let y = 0; y < heightSeg; y++)
+    for (let x = 0; x < widthSeg; x++) {
+      const a = y * (widthSeg + 1) + x, b = a + widthSeg + 1;
+      idx.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+  return { positions: new Float32Array(pos), normals: new Float32Array(nrm), indices: new Uint16Array(idx) };
+}
+
+function generateCube(size) {
+  const s = size / 2;
+  const faces = [
+    { n: [0,0,1], verts: [[-s,-s,s],[s,-s,s],[s,s,s],[-s,s,s]] },
+    { n: [0,0,-1], verts: [[s,-s,-s],[-s,-s,-s],[-s,s,-s],[s,s,-s]] },
+    { n: [0,1,0], verts: [[-s,s,s],[s,s,s],[s,s,-s],[-s,s,-s]] },
+    { n: [0,-1,0], verts: [[-s,-s,-s],[s,-s,-s],[s,-s,s],[-s,-s,s]] },
+    { n: [1,0,0], verts: [[s,-s,s],[s,-s,-s],[s,s,-s],[s,s,s]] },
+    { n: [-1,0,0], verts: [[-s,-s,-s],[-s,-s,s],[-s,s,s],[-s,s,-s]] },
+  ];
+  const pos = [], nrm = [], idx = [];
+  faces.forEach((f, i) => {
+    f.verts.forEach(v => { pos.push(...v); nrm.push(...f.n); });
+    const o = i * 4; idx.push(o, o+1, o+2, o, o+2, o+3);
+  });
+  return { positions: new Float32Array(pos), normals: new Float32Array(nrm), indices: new Uint16Array(idx) };
+}
+
+function generateCylinder(radiusTop, radiusBottom, height, segments) {
+  const pos = [], nrm = [], idx = [];
+  const halfH = height / 2;
+  for (let i = 0; i <= segments; i++) {
+    const u = i / segments, angle = u * Math.PI * 2;
+    const cos = Math.cos(angle), sin = Math.sin(angle);
+    const slope = (radiusBottom - radiusTop) / height;
+    const nLen = Math.sqrt(1 + slope * slope);
+    pos.push(radiusTop * cos, halfH, radiusTop * sin);
+    nrm.push(cos / nLen, slope / nLen, sin / nLen);
+    pos.push(radiusBottom * cos, -halfH, radiusBottom * sin);
+    nrm.push(cos / nLen, slope / nLen, sin / nLen);
+  }
+  for (let i = 0; i < segments; i++) {
+    const a = i * 2, b = a + 1, c = a + 2, d = a + 3;
+    idx.push(a, b, c, b, d, c);
+  }
+  const addCap = (y, radius, ny) => {
+    const center = pos.length / 3;
+    pos.push(0, y, 0); nrm.push(0, ny, 0);
+    for (let i = 0; i <= segments; i++) {
+      const angle = (i / segments) * Math.PI * 2;
+      pos.push(radius * Math.cos(angle), y, radius * Math.sin(angle));
+      nrm.push(0, ny, 0);
+    }
+    for (let i = 0; i < segments; i++) {
+      if (ny > 0) idx.push(center, center + i + 1, center + i + 2);
+      else idx.push(center, center + i + 2, center + i + 1);
+    }
+  };
+  addCap(halfH, radiusTop, 1);
+  addCap(-halfH, radiusBottom, -1);
+  return { positions: new Float32Array(pos), normals: new Float32Array(nrm), indices: new Uint16Array(idx) };
+}
+
+function generatePlane(width, depth, widthSeg, depthSeg) {
+  const pos = [], nrm = [], idx = [];
+  const hw = width / 2, hd = depth / 2;
+  for (let z = 0; z <= depthSeg; z++)
+    for (let x = 0; x <= widthSeg; x++) {
+      pos.push(x / widthSeg * width - hw, 0, z / depthSeg * depth - hd);
+      nrm.push(0, 1, 0);
+    }
+  for (let z = 0; z < depthSeg; z++)
+    for (let x = 0; x < widthSeg; x++) {
+      const a = z * (widthSeg + 1) + x, b = a + widthSeg + 1;
+      idx.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+  return { positions: new Float32Array(pos), normals: new Float32Array(nrm), indices: new Uint16Array(idx) };
+}
+
+function generateTorus(majorR, minorR, majorSeg, minorSeg) {
+  const pos = [], nrm = [], idx = [];
+  for (let j = 0; j <= majorSeg; j++) {
+    const phi = (j / majorSeg) * Math.PI * 2;
+    const cp = Math.cos(phi), sp = Math.sin(phi);
+    for (let i = 0; i <= minorSeg; i++) {
+      const theta = (i / minorSeg) * Math.PI * 2;
+      const ct = Math.cos(theta), st = Math.sin(theta);
+      pos.push((majorR + minorR * ct) * cp, minorR * st, (majorR + minorR * ct) * sp);
+      nrm.push(ct * cp, st, ct * sp);
+    }
+  }
+  for (let j = 0; j < majorSeg; j++)
+    for (let i = 0; i < minorSeg; i++) {
+      const a = j * (minorSeg + 1) + i, b = a + minorSeg + 1;
+      idx.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+  return { positions: new Float32Array(pos), normals: new Float32Array(nrm), indices: new Uint16Array(idx) };
+}
+
+function generateCapsule(radius, height, capStacks, slices) {
+  const pos = [], nrm = [], idx = [];
+  const halfH = height / 2;
+  // Top hemisphere
+  for (let s = 0; s <= capStacks; s++) {
+    const phi = (Math.PI / 2) * (1 - s / capStacks);
+    const cp = Math.cos(phi), sp = Math.sin(phi);
+    for (let i = 0; i <= slices; i++) {
+      const theta = (i / slices) * Math.PI * 2;
+      const ct = Math.cos(theta), st = Math.sin(theta);
+      pos.push(radius * cp * ct, radius * sp + halfH, radius * cp * st);
+      nrm.push(cp * ct, sp, cp * st);
+    }
+  }
+  // Bottom hemisphere
+  for (let s = 1; s <= capStacks; s++) {
+    const phi = -(Math.PI / 2) * (s / capStacks);
+    const cp = Math.cos(phi), sp = Math.sin(phi);
+    for (let i = 0; i <= slices; i++) {
+      const theta = (i / slices) * Math.PI * 2;
+      const ct = Math.cos(theta), st = Math.sin(theta);
+      pos.push(radius * cp * ct, radius * sp - halfH, radius * cp * st);
+      nrm.push(cp * ct, sp, cp * st);
+    }
+  }
+  const totalStacks = capStacks * 2, stride = slices + 1;
+  for (let s = 0; s < totalStacks; s++)
+    for (let i = 0; i < slices; i++) {
+      const a = s * stride + i, b = a + stride;
+      idx.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+  return { positions: new Float32Array(pos), normals: new Float32Array(nrm), indices: new Uint16Array(idx) };
+}
+
+function generateGrid(size, divisions) {
+  const pos = [], nrm = [], idx = [];
+  const step = size / divisions, half = size / 2;
+  let vi = 0;
+  for (let i = 0; i <= divisions; i++) {
+    const t = i * step - half;
+    pos.push(-half, 0, t, half, 0, t); nrm.push(0,1,0, 0,1,0); idx.push(vi, vi+1); vi += 2;
+    pos.push(t, 0, -half, t, 0, half); nrm.push(0,1,0, 0,1,0); idx.push(vi, vi+1); vi += 2;
+  }
+  return { positions: new Float32Array(pos), normals: new Float32Array(nrm), indices: new Uint16Array(idx), mode: gl.LINES };
+}
+
+// ── Mesh creation ────────────────────────────────────────────────────────────
+
+function createMesh(geom) {
+  const vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  const posBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, geom.positions, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(loc.aPos);
+  gl.vertexAttribPointer(loc.aPos, 3, gl.FLOAT, false, 0, 0);
+  const nrmBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, nrmBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, geom.normals, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(loc.aNormal);
+  gl.vertexAttribPointer(loc.aNormal, 3, gl.FLOAT, false, 0, 0);
+  const idxBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, geom.indices, gl.STATIC_DRAW);
+  gl.bindVertexArray(null);
+  return { vao, count: geom.indices.length, mode: geom.mode || gl.TRIANGLES };
+}
+
+function createGridMesh(geom) {
+  const vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  const posBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, geom.positions, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(gridLoc.aPos);
+  gl.vertexAttribPointer(gridLoc.aPos, 3, gl.FLOAT, false, 0, 0);
+  const idxBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, geom.indices, gl.STATIC_DRAW);
+  gl.bindVertexArray(null);
+  return { vao, count: geom.indices.length };
+}
+
+// ── Prototype meshes ─────────────────────────────────────────────────────────
+
+const prototypes = {
+  cube: createMesh(generateCube(1)),
+  sphere: createMesh(generateSphere(0.5, 48, 32)),
+  cylinder: createMesh(generateCylinder(0.5, 0.5, 1, 48)),
+  cone: createMesh(generateCylinder(0.0, 0.5, 1, 48)),
+  plane: createMesh(generatePlane(1, 1, 4, 4)),
+  line: createMesh(generateCylinder(0.02, 0.02, 1, 8)),
+  torus: createMesh(generateTorus(0.35, 0.15, 48, 24)),
+  capsule: createMesh(generateCapsule(0.3, 0.6, 12, 32)),
+};
+const gridMesh = createGridMesh(generateGrid(16, 32));
+
+// ── Math utilities ───────────────────────────────────────────────────────────
+
+function mat4Perspective(fov, aspect, near, far) {
+  const f = 1 / Math.tan(fov / 2), nf = 1 / (near - far);
+  return new Float32Array([f/aspect,0,0,0, 0,f,0,0, 0,0,(far+near)*nf,-1, 0,0,2*far*near*nf,0]);
+}
+function mat4LookAt(eye, center, up) {
+  const z = vecNormalize(vecSub(eye, center));
+  const x = vecNormalize(vecCross(up, z));
+  const y = vecCross(z, x);
+  return new Float32Array([x[0],y[0],z[0],0, x[1],y[1],z[1],0, x[2],y[2],z[2],0, -vecDot(x,eye),-vecDot(y,eye),-vecDot(z,eye),1]);
+}
+function mat4Multiply(a, b) {
+  const r = new Float32Array(16);
+  for (let i = 0; i < 4; i++)
+    for (let j = 0; j < 4; j++) { let s = 0; for (let k = 0; k < 4; k++) s += a[k*4+j] * b[i*4+k]; r[i*4+j] = s; }
+  return r;
+}
+function mat4Identity() { return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]); }
+function mat4Translate(tx, ty, tz) { return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, tx,ty,tz,1]); }
+function mat4Scale(sx, sy, sz) { return new Float32Array([sx,0,0,0, 0,sy,0,0, 0,0,sz,0, 0,0,0,1]); }
+function mat4RotateY(angle) {
+  const c = Math.cos(angle), s = Math.sin(angle);
+  return new Float32Array([c,0,s,0, 0,1,0,0, -s,0,c,0, 0,0,0,1]);
+}
+function mat3NormalFromMat4(m) { return new Float32Array([m[0],m[1],m[2], m[4],m[5],m[6], m[8],m[9],m[10]]); }
+function vecNormalize(v) { const l = Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]); return l > 0 ? [v[0]/l,v[1]/l,v[2]/l] : [0,0,0]; }
+function vecSub(a,b) { return [a[0]-b[0],a[1]-b[1],a[2]-b[2]]; }
+function vecCross(a,b) { return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
+function vecDot(a,b) { return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]; }
+
+// ── Scene presets ────────────────────────────────────────────────────────────
+
+function makeBuilding(x, z, w, h, d, color, metallic, roughness) {
+  return { type: 'cube', position: [x, h/2, z], scale: [w, h, d], color, metallic, roughness };
+}
+
+const SCENES = {
+  architecture: (function() {
+    const shapes = [];
+
+    // Ground plane — concrete plaza
+    shapes.push({ type: 'plane', position: [0, 0.001, 0], scale: [16, 1, 16], color: [0.18, 0.18, 0.17], metallic: 0.0, roughness: 0.85 });
+
+    // Subtle grid overlay on ground (thin lines as cubes)
+    for (let i = -6; i <= 6; i++) {
+      shapes.push({ type: 'cube', position: [i, 0.005, 0], scale: [0.02, 0.01, 14], color: [0.25, 0.25, 0.24], metallic: 0.0, roughness: 0.9 });
+      shapes.push({ type: 'cube', position: [0, 0.005, i], scale: [14, 0.01, 0.02], color: [0.25, 0.25, 0.24], metallic: 0.0, roughness: 0.9 });
+    }
+
+    // === Main tower — modern glass skyscraper ===
+    shapes.push({ type: 'cube', position: [0, 3.5, -1.5], scale: [2.0, 7.0, 1.8], color: [0.35, 0.55, 0.75], metallic: 1.0, roughness: 0.05 }); // Glass facade
+    // Floor lines (horizontal bands)
+    for (let f = 0; f < 7; f++) {
+      shapes.push({ type: 'cube', position: [0, f + 0.3, -1.5], scale: [2.05, 0.04, 1.85], color: [0.2, 0.22, 0.25], metallic: 0.8, roughness: 0.2 });
+    }
+    // Roof accent
+    shapes.push({ type: 'cube', position: [0, 7.05, -1.5], scale: [2.1, 0.1, 1.9], color: [0.9, 0.9, 0.92], metallic: 1.0, roughness: 0.1 });
+
+    // === Secondary building — shorter, wider ===
+    shapes.push({ type: 'cube', position: [-3.0, 2.0, 0.5], scale: [2.5, 4.0, 2.0], color: [0.6, 0.62, 0.65], metallic: 0.9, roughness: 0.08 }); // Silver glass
+    for (let f = 0; f < 4; f++) {
+      shapes.push({ type: 'cube', position: [-3.0, f + 0.3, 0.5], scale: [2.55, 0.04, 2.05], color: [0.15, 0.15, 0.18], metallic: 0.7, roughness: 0.3 });
+    }
+    shapes.push({ type: 'cube', position: [-3.0, 4.05, 0.5], scale: [2.6, 0.1, 2.1], color: [0.85, 0.85, 0.88], metallic: 1.0, roughness: 0.1 });
+
+    // === Third building — warm tones, mid-height ===
+    shapes.push({ type: 'cube', position: [3.2, 1.75, 1.0], scale: [1.6, 3.5, 2.2], color: [0.75, 0.65, 0.55], metallic: 0.1, roughness: 0.3 }); // Marble-like
+    for (let f = 0; f < 3; f++) {
+      shapes.push({ type: 'cube', position: [3.2, f + 0.5, 1.0], scale: [1.65, 0.03, 2.25], color: [0.6, 0.5, 0.42], metallic: 0.05, roughness: 0.5 });
+    }
+
+    // === Low building — entrance / lobby ===
+    shapes.push({ type: 'cube', position: [0.5, 0.75, 2.0], scale: [5.0, 1.5, 1.5], color: [0.85, 0.85, 0.82], metallic: 0.1, roughness: 0.3 }); // Marble lobby
+    // Glass entrance door
+    shapes.push({ type: 'cube', position: [0.5, 0.5, 2.77], scale: [1.5, 1.0, 0.04], color: [0.4, 0.6, 0.8], metallic: 0.9, roughness: 0.05 });
+
+    // === Landscaping — trees ===
+    const treePositions = [[-1.5, 0, 3.5], [2.5, 0, 3.5], [-5.0, 0, 3.0], [5.5, 0, -2.0], [-5.5, 0, -3.0], [5.0, 0, 3.5]];
+    for (const [tx, , tz] of treePositions) {
+      // Trunk (brown wood)
+      shapes.push({ type: 'cylinder', position: [tx, 0.5, tz], scale: [0.12, 1.0, 0.12], color: [0.35, 0.22, 0.1], metallic: 0.0, roughness: 0.8 });
+      // Canopy (green sphere)
+      shapes.push({ type: 'sphere', position: [tx, 1.3, tz], scale: [0.8, 0.9, 0.8], color: [0.1, 0.42, 0.08], metallic: 0.0, roughness: 0.85 });
+    }
+
+    // === Reflective water feature — decorative pool ===
+    shapes.push({ type: 'plane', position: [3.5, 0.02, -3.0], scale: [3.0, 1, 2.5], color: [0.08, 0.15, 0.35], metallic: 0.9, roughness: 0.05 });
+    // Pool edge
+    shapes.push({ type: 'cube', position: [3.5, 0.06, -1.76], scale: [3.1, 0.08, 0.08], color: [0.7, 0.7, 0.68], metallic: 0.1, roughness: 0.3 });
+    shapes.push({ type: 'cube', position: [3.5, 0.06, -4.26], scale: [3.1, 0.08, 0.08], color: [0.7, 0.7, 0.68], metallic: 0.1, roughness: 0.3 });
+
+    // === Street lamps ===
+    const lampPositions = [[-1.0, 0, 4.5], [2.0, 0, 4.5], [5.5, 0, 0.5], [-5.5, 0, 0.5]];
+    for (const [lx, , lz] of lampPositions) {
+      shapes.push({ type: 'cylinder', position: [lx, 1.2, lz], scale: [0.05, 2.4, 0.05], color: [0.25, 0.25, 0.25], metallic: 0.7, roughness: 0.3 });
+      shapes.push({ type: 'sphere', position: [lx, 2.5, lz], scale: [0.2, 0.15, 0.2], color: [1.0, 0.95, 0.7], metallic: 0.0, roughness: 0.3 });
+    }
+
+    return shapes;
+  })(),
+
+  product: (function() {
+    const shapes = [];
+
+    // Dark studio floor
+    shapes.push({ type: 'plane', position: [0, 0.001, 0], scale: [14, 1, 14], color: [0.04, 0.04, 0.05], metallic: 0.3, roughness: 0.4 });
+
+    // === Central pedestal — marble ===
+    shapes.push({ type: 'cylinder', position: [0, 0.4, 0], scale: [2.0, 0.8, 2.0], color: [0.88, 0.86, 0.82], metallic: 0.1, roughness: 0.3 });
+    // Pedestal top ring
+    shapes.push({ type: 'cylinder', position: [0, 0.82, 0], scale: [2.1, 0.04, 2.1], color: [0.92, 0.9, 0.86], metallic: 0.15, roughness: 0.25 });
+    // Pedestal base ring
+    shapes.push({ type: 'cylinder', position: [0, 0.02, 0], scale: [2.2, 0.04, 2.2], color: [0.8, 0.78, 0.74], metallic: 0.15, roughness: 0.35 });
+
+    // === Hero product — chrome torus (like a luxury ring) ===
+    shapes.push({ type: 'torus', position: [0, 1.6, 0], scale: [1.0, 1.0, 1.0], color: [0.95, 0.93, 0.88], metallic: 1.0, roughness: 0.08 });
+
+    // === Floating chrome sphere inside torus ===
+    shapes.push({ type: 'sphere', position: [0, 1.6, 0], scale: [0.5, 0.5, 0.5], color: [0.3, 0.5, 0.9], metallic: 1.0, roughness: 0.05 });
+
+    // === Secondary products on smaller pedestals ===
+    // Left pedestal + sphere
+    shapes.push({ type: 'cylinder', position: [-3.5, 0.25, 1.5], scale: [1.0, 0.5, 1.0], color: [0.85, 0.83, 0.8], metallic: 0.1, roughness: 0.3 });
+    shapes.push({ type: 'sphere', position: [-3.5, 0.8, 1.5], scale: [0.6, 0.6, 0.6], color: [0.9, 0.25, 0.2], metallic: 0.8, roughness: 0.12 });
+
+    // Right pedestal + cube (gemstone style)
+    shapes.push({ type: 'cylinder', position: [3.5, 0.25, 1.5], scale: [1.0, 0.5, 1.0], color: [0.85, 0.83, 0.8], metallic: 0.1, roughness: 0.3 });
+    shapes.push({ type: 'cube', position: [3.5, 0.85, 1.5], scale: [0.5, 0.5, 0.5], color: [0.15, 0.8, 0.5], metallic: 0.9, roughness: 0.05 });
+
+    // Back pedestal + cone (crystal)
+    shapes.push({ type: 'cylinder', position: [0, 0.25, -3.5], scale: [1.0, 0.5, 1.0], color: [0.85, 0.83, 0.8], metallic: 0.1, roughness: 0.3 });
+    shapes.push({ type: 'cone', position: [0, 1.0, -3.5], scale: [0.6, 1.2, 0.6], color: [0.6, 0.3, 0.9], metallic: 0.95, roughness: 0.05 });
+
+    // === Studio lighting accents (glowing spheres off-screen suggest spot lights) ===
+    shapes.push({ type: 'sphere', position: [-5.0, 5.0, -4.0], scale: [0.3, 0.3, 0.3], color: [1.0, 0.98, 0.9], metallic: 0.0, roughness: 0.2 });
+    shapes.push({ type: 'sphere', position: [5.0, 5.0, -4.0], scale: [0.3, 0.3, 0.3], color: [1.0, 0.98, 0.9], metallic: 0.0, roughness: 0.2 });
+    shapes.push({ type: 'sphere', position: [0, 6.0, 3.0], scale: [0.25, 0.25, 0.25], color: [0.9, 0.92, 1.0], metallic: 0.0, roughness: 0.2 });
+
+    // === Subtle floor reflection marks (very thin cubes) ===
+    shapes.push({ type: 'cube', position: [0, 0.003, 0], scale: [2.5, 0.002, 2.5], color: [0.08, 0.08, 0.1], metallic: 0.8, roughness: 0.1 });
+
+    return shapes;
+  })(),
+
+  dataviz: (function() {
+    const shapes = [];
+
+    // Ground plane — dark with grid
+    shapes.push({ type: 'plane', position: [0, 0.001, 0], scale: [14, 1, 14], color: [0.06, 0.07, 0.1], metallic: 0.2, roughness: 0.6 });
+
+    // Grid lines on ground
+    for (let i = -5; i <= 5; i++) {
+      shapes.push({ type: 'cube', position: [i, 0.004, 0], scale: [0.015, 0.005, 10], color: [0.15, 0.2, 0.35], metallic: 0.3, roughness: 0.5 });
+      shapes.push({ type: 'cube', position: [0, 0.004, i], scale: [10, 0.005, 0.015], color: [0.15, 0.2, 0.35], metallic: 0.3, roughness: 0.5 });
+    }
+
+    // === 3D Bar chart ===
+    const barData = [
+      { x: -3, z: -1, h: 4.5, color: [0.2, 0.55, 0.95] },  // Blue
+      { x: -1.5, z: -1, h: 3.2, color: [0.2, 0.55, 0.95] },
+      { x: 0, z: -1, h: 5.8, color: [0.2, 0.55, 0.95] },
+      { x: 1.5, z: -1, h: 2.5, color: [0.2, 0.55, 0.95] },
+      { x: 3, z: -1, h: 4.0, color: [0.2, 0.55, 0.95] },
+
+      { x: -3, z: 1, h: 3.0, color: [0.15, 0.75, 0.4] },   // Green
+      { x: -1.5, z: 1, h: 4.8, color: [0.15, 0.75, 0.4] },
+      { x: 0, z: 1, h: 2.2, color: [0.15, 0.75, 0.4] },
+      { x: 1.5, z: 1, h: 5.5, color: [0.15, 0.75, 0.4] },
+      { x: 3, z: 1, h: 3.8, color: [0.15, 0.75, 0.4] },
+
+      { x: -3, z: 3, h: 2.0, color: [0.95, 0.5, 0.15] },    // Orange
+      { x: -1.5, z: 3, h: 3.5, color: [0.95, 0.5, 0.15] },
+      { x: 0, z: 3, h: 4.2, color: [0.95, 0.5, 0.15] },
+      { x: 1.5, z: 3, h: 1.8, color: [0.95, 0.5, 0.15] },
+      { x: 3, z: 3, h: 3.0, color: [0.95, 0.5, 0.15] },
+    ];
+
+    for (const bar of barData) {
+      shapes.push({ type: 'cube', position: [bar.x, bar.h / 2, bar.z], scale: [0.8, bar.h, 0.8], color: bar.color, metallic: 0.4, roughness: 0.25 });
+      // Top cap (slightly brighter)
+      shapes.push({ type: 'cube', position: [bar.x, bar.h + 0.02, bar.z], scale: [0.82, 0.04, 0.82], color: [bar.color[0] + 0.1, bar.color[1] + 0.1, bar.color[2] + 0.1], metallic: 0.5, roughness: 0.2 });
+    }
+
+    // === Axes ===
+    // X axis
+    shapes.push({ type: 'cube', position: [0, 0.01, -2.5], scale: [8, 0.04, 0.04], color: [0.7, 0.7, 0.75], metallic: 0.5, roughness: 0.3 });
+    // Y axis
+    shapes.push({ type: 'cube', position: [-4.2, 3.0, -2.5], scale: [0.04, 6.0, 0.04], color: [0.7, 0.7, 0.75], metallic: 0.5, roughness: 0.3 });
+    // Z axis
+    shapes.push({ type: 'cube', position: [-4.2, 0.01, 1.0], scale: [0.04, 0.04, 7.0], color: [0.7, 0.7, 0.75], metallic: 0.5, roughness: 0.3 });
+
+    // Y-axis tick marks
+    for (let y = 1; y <= 6; y++) {
+      shapes.push({ type: 'cube', position: [-4.2, y, -2.5], scale: [0.2, 0.02, 0.02], color: [0.5, 0.5, 0.55], metallic: 0.3, roughness: 0.4 });
+    }
+
+    // === Legend ===
+    // Blue legend
+    shapes.push({ type: 'cube', position: [5.5, 3.5, 0], scale: [0.4, 0.4, 0.4], color: [0.2, 0.55, 0.95], metallic: 0.4, roughness: 0.25 });
+    // Green legend
+    shapes.push({ type: 'cube', position: [5.5, 2.5, 0], scale: [0.4, 0.4, 0.4], color: [0.15, 0.75, 0.4], metallic: 0.4, roughness: 0.25 });
+    // Orange legend
+    shapes.push({ type: 'cube', position: [5.5, 1.5, 0], scale: [0.4, 0.4, 0.4], color: [0.95, 0.5, 0.15], metallic: 0.4, roughness: 0.25 });
+
+    // Legend label planes (colored indicators next to legend)
+    shapes.push({ type: 'plane', position: [6.2, 3.5, 0], scale: [0.8, 1, 0.15], color: [0.2, 0.55, 0.95], metallic: 0.0, roughness: 0.5 });
+    shapes.push({ type: 'plane', position: [6.2, 2.5, 0], scale: [0.8, 1, 0.15], color: [0.15, 0.75, 0.4], metallic: 0.0, roughness: 0.5 });
+    shapes.push({ type: 'plane', position: [6.2, 1.5, 0], scale: [0.8, 1, 0.15], color: [0.95, 0.5, 0.15], metallic: 0.0, roughness: 0.5 });
+
+    return shapes;
+  })(),
+
+  landscape: (function() {
+    const shapes = [];
+
+    // Ground — earthy green
+    shapes.push({ type: 'plane', position: [0, 0.001, 0], scale: [20, 1, 20], color: [0.22, 0.5, 0.15], metallic: 0.0, roughness: 0.9 });
+
+    // === Rolling hills (half-buried scaled spheres) ===
+    const hills = [
+      { x: -4, z: -5, sx: 4.0, sy: 1.5, sz: 3.5, color: [0.2, 0.48, 0.12] },
+      { x: 3, z: -6, sx: 5.0, sy: 2.0, sz: 4.0, color: [0.18, 0.45, 0.1] },
+      { x: -6, z: 2, sx: 3.5, sy: 1.2, sz: 3.0, color: [0.25, 0.52, 0.15] },
+      { x: 6, z: 3, sx: 4.5, sy: 1.8, sz: 4.0, color: [0.2, 0.46, 0.11] },
+      { x: 0, z: -8, sx: 6.0, sy: 2.5, sz: 5.0, color: [0.17, 0.42, 0.1] },
+      { x: -2, z: 6, sx: 3.0, sy: 1.0, sz: 2.5, color: [0.24, 0.5, 0.14] },
+    ];
+    for (const h of hills) {
+      shapes.push({ type: 'sphere', position: [h.x, h.sy * 0.3, h.z], scale: [h.sx, h.sy, h.sz], color: h.color, metallic: 0.0, roughness: 0.9 });
+    }
+
+    // === Trees (cone canopy + cylinder trunk) ===
+    const treePositions = [
+      [-2, 0, -2], [-3.5, 0, -3], [1, 0, -3.5], [4, 0, -1], [-1, 0, 1.5],
+      [2.5, 0, 2], [-4, 0, 4], [5, 0, 5], [-5.5, 0, -1], [0, 0, 4.5],
+      [3, 0, -4.5], [-2.5, 0, -6], [1.5, 0, 6], [-6, 0, -4],
+    ];
+    for (const [tx, , tz] of treePositions) {
+      const h = 1.0 + Math.random() * 1.5;
+      const tilt = (Math.random() - 0.5) * 0.1;
+      // Trunk (wood)
+      shapes.push({ type: 'cylinder', position: [tx, h * 0.35, tz], scale: [0.1, h * 0.7, 0.1], color: [0.4, 0.25, 0.1], metallic: 0.0, roughness: 0.8 });
+      // Canopy (cone)
+      shapes.push({ type: 'cone', position: [tx + tilt, h * 0.7 + 0.4, tz], scale: [0.6 + Math.random() * 0.3, h * 0.7, 0.6 + Math.random() * 0.3], color: [0.08 + Math.random() * 0.1, 0.35 + Math.random() * 0.2, 0.05], metallic: 0.0, roughness: 0.85 });
+    }
+
+    // === Lake / water ===
+    shapes.push({ type: 'plane', position: [3, 0.015, 0], scale: [4.0, 1, 3.5], color: [0.08, 0.2, 0.55], metallic: 0.9, roughness: 0.05 });
+    // Shore stones
+    const stonePositions = [[1.2, 0.05, -1.5], [1.0, 0.04, 1.3], [4.8, 0.06, -1.2], [5.1, 0.05, 1.5], [1.5, 0.05, 0.5]];
+    for (const [sx, sy, sz] of stonePositions) {
+      const ss = 0.1 + Math.random() * 0.15;
+      shapes.push({ type: 'sphere', position: [sx, sy, sz], scale: [ss, ss * 0.6, ss], color: [0.45, 0.43, 0.4], metallic: 0.0, roughness: 0.8 });
+    }
+
+    // === Sun in the sky ===
+    shapes.push({ type: 'sphere', position: [-6, 8, -8], scale: [1.5, 1.5, 1.5], color: [1.0, 0.9, 0.4], metallic: 0.0, roughness: 0.2 });
+
+    // === Small bridge over water ===
+    shapes.push({ type: 'cube', position: [3, 0.25, 0], scale: [0.6, 0.08, 3.8], color: [0.45, 0.28, 0.12], metallic: 0.0, roughness: 0.8 });
+    // Bridge railings
+    shapes.push({ type: 'cube', position: [2.7, 0.4, 0], scale: [0.04, 0.3, 3.8], color: [0.4, 0.25, 0.1], metallic: 0.0, roughness: 0.8 });
+    shapes.push({ type: 'cube', position: [3.3, 0.4, 0], scale: [0.04, 0.3, 3.8], color: [0.4, 0.25, 0.1], metallic: 0.0, roughness: 0.8 });
+    // Bridge posts
+    for (let bp = -1.5; bp <= 1.5; bp += 1.0) {
+      shapes.push({ type: 'cylinder', position: [2.7, 0.35, bp], scale: [0.04, 0.5, 0.04], color: [0.4, 0.25, 0.1], metallic: 0.0, roughness: 0.8 });
+      shapes.push({ type: 'cylinder', position: [3.3, 0.35, bp], scale: [0.04, 0.5, 0.04], color: [0.4, 0.25, 0.1], metallic: 0.0, roughness: 0.8 });
+    }
+
+    // === Clouds (white flattened spheres) ===
+    shapes.push({ type: 'sphere', position: [-3, 7, -3], scale: [2.0, 0.5, 1.5], color: [0.95, 0.95, 0.97], metallic: 0.0, roughness: 0.9 });
+    shapes.push({ type: 'sphere', position: [-2, 7.2, -3.5], scale: [1.5, 0.4, 1.2], color: [0.92, 0.92, 0.95], metallic: 0.0, roughness: 0.9 });
+    shapes.push({ type: 'sphere', position: [4, 6.5, -6], scale: [2.5, 0.6, 1.8], color: [0.93, 0.93, 0.96], metallic: 0.0, roughness: 0.9 });
+    shapes.push({ type: 'sphere', position: [5, 6.8, -5.5], scale: [1.8, 0.4, 1.3], color: [0.9, 0.9, 0.94], metallic: 0.0, roughness: 0.9 });
+
+    // === Flowers (tiny colored spheres near ground) ===
+    for (let fi = 0; fi < 20; fi++) {
+      const fx = -7 + Math.random() * 14;
+      const fz = -7 + Math.random() * 14;
+      // Skip if on water
+      if (fx > 1 && fx < 5 && fz > -1.75 && fz < 1.75) continue;
+      const fcolors = [[0.9, 0.2, 0.3], [0.95, 0.85, 0.15], [0.85, 0.4, 0.7], [0.95, 0.6, 0.1]];
+      const fc = fcolors[fi % fcolors.length];
+      shapes.push({ type: 'sphere', position: [fx, 0.08, fz], scale: [0.08, 0.08, 0.08], color: fc, metallic: 0.0, roughness: 0.6 });
+    }
+
+    return shapes;
+  })(),
+};
+
+function hslToRgb(h, s, l) {
+  let r, g, b;
+  if (s === 0) { r = g = b = l; }
+  else {
+    const hue2rgb = (p, q, t) => { if (t < 0) t += 1; if (t > 1) t -= 1; if (t < 1/6) return p + (q - p) * 6 * t; if (t < 1/2) return q; if (t < 2/3) return p + (q - p) * (2/3 - t) * 6; return p; };
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1/3); g = hue2rgb(p, q, h); b = hue2rgb(p, q, h - 1/3);
+  }
+  return [r, g, b];
+}
+
+// ── Scene state ──────────────────────────────────────────────────────────────
+
+let sceneShapes = [];
+let currentPreset = 'architecture';
+let animatedShapes = []; // indices of shapes that should animate
+
+// Camera orbit state (must be declared before loadScene uses them)
+let orbitTheta = 0.5, orbitPhi = 0.6, orbitDist = 12;
+let targetTheta = orbitTheta, targetPhi = orbitPhi, targetDist = orbitDist;
+let autoRotate = true;
+let isDragging = false, lastX = 0, lastY = 0;
+
+function loadScene(name) {
+  currentPreset = name;
+  sceneShapes = JSON.parse(JSON.stringify(SCENES[name] || SCENES.city));
+  animatedShapes = [];
+  updateShapeCount();
+  // Update preset buttons
+  document.querySelectorAll('.presets button').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.scene === name);
+  });
+  // Reset camera for different scenes
+  if (name === 'product') { targetDist = 10; targetPhi = 0.7; targetTheta = 0.4; }
+  else if (name === 'dataviz') { targetDist = 14; targetPhi = 0.55; targetTheta = -0.3; }
+  else if (name === 'landscape') { targetDist = 14; targetPhi = 0.6; targetTheta = 0.5; }
+  else { targetDist = 14; targetPhi = 0.55; targetTheta = 0.4; }
+}
+
+function updateShapeCount() {
+  document.getElementById('shapeCount').textContent = sceneShapes.length + ' shapes';
+}
+
+function hexToRgb(hex) {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  return [r, g, b];
+}
+
+function addUserShape() {
+  const type = document.getElementById('shapeType').value;
+  const color = hexToRgb(document.getElementById('shapeColor').value);
+  const metallic = document.getElementById('metalSlider').value / 100;
+  const roughness = document.getElementById('roughSlider').value / 100;
+
+  // Place shape at a random position near center, slightly above ground
+  const x = (Math.random() - 0.5) * 6;
+  const z = (Math.random() - 0.5) * 6;
+  const s = 0.5 + Math.random() * 0.8;
+  const y = type === 'plane' ? 0.02 : s / 2 + 0.5;
+
+  const shape = { type, position: [x, y, z], scale: [s, s, s], color, metallic, roughness };
+  sceneShapes.push(shape);
+  animatedShapes.push({ idx: sceneShapes.length - 1, startTime: performance.now() / 1000, fromY: y + 3 });
+  updateShapeCount();
+}
+
+function openClaude() {
+  const prompt = encodeURIComponent(
+    "Using SceneView for Android (Jetpack Compose), create a 3D scene with procedural geometry. " +
+    "Use SceneView { } composable with CubeNode, SphereNode, CylinderNode to build a miniature city " +
+    "with buildings of different heights, a park with trees (cylinder trunks + sphere canopies), " +
+    "and a reflective water feature. Apply PBR materials with varying metallic and roughness values. " +
+    "Include the dependency: io.github.sceneview:sceneview:4.19.0"
+  );
+  window.open('https://claude.ai/new?q=' + prompt, '_blank');
+}
+
+// Initialize with architecture scene
+loadScene('architecture');
+
+// ── Camera orbit controls ────────────────────────────────────────────────────
+
+canvas.addEventListener('pointerdown', e => {
+  isDragging = true; lastX = e.clientX; lastY = e.clientY;
+  autoRotate = false;
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener('pointermove', e => {
+  if (!isDragging) return;
+  targetTheta += (e.clientX - lastX) * 0.008;
+  targetPhi = Math.max(0.1, Math.min(Math.PI - 0.1, targetPhi - (e.clientY - lastY) * 0.008));
+  lastX = e.clientX; lastY = e.clientY;
+});
+canvas.addEventListener('pointerup', () => { isDragging = false; });
+canvas.addEventListener('wheel', e => {
+  targetDist = Math.max(2, Math.min(25, targetDist + e.deltaY * 0.008));
+  e.preventDefault();
+}, { passive: false });
+
+let lastPinchDist = 0;
+canvas.addEventListener('touchstart', e => {
+  if (e.touches.length === 2) {
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    lastPinchDist = Math.sqrt(dx*dx + dy*dy);
+  }
+}, { passive: true });
+canvas.addEventListener('touchmove', e => {
+  if (e.touches.length === 2) {
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    targetDist = Math.max(2, Math.min(25, targetDist - (dist - lastPinchDist) * 0.02));
+    lastPinchDist = dist;
+  }
+}, { passive: true });
+
+// ── Render loop ──────────────────────────────────────────────────────────────
+
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = canvas.clientWidth * dpr;
+  canvas.height = canvas.clientHeight * dpr;
+  gl.viewport(0, 0, canvas.width, canvas.height);
+}
+resize();
+window.addEventListener('resize', resize);
+
+let loadingHidden = false;
+
+function render(time) {
+  requestAnimationFrame(render);
+  const t = time * 0.001;
+
+  const smoothing = 0.08;
+  if (autoRotate) targetTheta += 0.002;
+  orbitTheta += (targetTheta - orbitTheta) * smoothing;
+  orbitPhi += (targetPhi - orbitPhi) * smoothing;
+  orbitDist += (targetDist - orbitDist) * smoothing;
+
+  const camX = orbitDist * Math.sin(orbitPhi) * Math.cos(orbitTheta);
+  const camY = orbitDist * Math.cos(orbitPhi);
+  const camZ = orbitDist * Math.sin(orbitPhi) * Math.sin(orbitTheta);
+  const camPos = [camX, camY, camZ];
+
+  const aspect = canvas.width / canvas.height;
+  const proj = mat4Perspective(Math.PI / 4, aspect, 0.1, 100);
+  const view = mat4LookAt(camPos, [0, 1.0, 0], [0, 1, 0]);
+  const vp = mat4Multiply(proj, view);
+
+  gl.clearColor(0.04, 0.05, 0.08, 1.0);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+  // Draw grid
+  gl.useProgram(gridProg);
+  gl.uniformMatrix4fv(gridLoc.uMVP, false, vp);
+  gl.bindVertexArray(gridMesh.vao);
+  gl.drawElements(gl.LINES, gridMesh.count, gl.UNSIGNED_SHORT, 0);
+
+  // Draw each shape
+  gl.useProgram(prog);
+  gl.uniform3fv(loc.uCamPos, camPos);
+  gl.uniform1f(loc.uTime, t);
+
+  for (let si = 0; si < sceneShapes.length; si++) {
+    const shape = sceneShapes[si];
+    const mesh = prototypes[shape.type];
+    if (!mesh) continue;
+
+    let p = shape.position || [0, 0, 0];
+    const s = shape.scale || [1, 1, 1];
+
+    // Animate newly added shapes (drop in from above)
+    const anim = animatedShapes.find(a => a.idx === si);
+    if (anim) {
+      const elapsed = t - anim.startTime;
+      if (elapsed < 1.0) {
+        const ease = 1 - Math.pow(1 - elapsed, 3); // ease-out cubic
+        const bounce = Math.sin(elapsed * Math.PI * 2) * 0.1 * (1 - elapsed);
+        p = [p[0], anim.fromY + (p[1] - anim.fromY) * ease + bounce, p[2]];
+      }
+    }
+
+    const model = mat4Multiply(mat4Translate(p[0], p[1], p[2]), mat4Scale(s[0], s[1], s[2]));
+    const mvp = mat4Multiply(vp, model);
+    const normalMat = mat3NormalFromMat4(model);
+
+    gl.uniformMatrix4fv(loc.uMVP, false, mvp);
+    gl.uniformMatrix4fv(loc.uModel, false, model);
+    gl.uniformMatrix3fv(loc.uNormalMatrix, false, normalMat);
+    gl.uniform3fv(loc.uBaseColor, shape.color || [0.8, 0.8, 0.8]);
+    gl.uniform1f(loc.uMetallic, shape.metallic ?? 0.0);
+    gl.uniform1f(loc.uRoughness, shape.roughness ?? 0.5);
+
+    gl.bindVertexArray(mesh.vao);
+    gl.drawElements(mesh.mode, mesh.count, gl.UNSIGNED_SHORT, 0);
+  }
+
+  if (!loadingHidden) {
+    loadingHidden = true;
+    document.getElementById('loading').classList.add('hidden');
+    setTimeout(() => { document.getElementById('loading').style.display = 'none'; }, 600);
+  }
+}
+
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

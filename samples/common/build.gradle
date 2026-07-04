@@ -1,0 +1,94 @@
+plugins {
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.compose.compiler)
+}
+
+android {
+    namespace = 'io.github.sceneview.sample.common'
+    compileSdk 36
+
+    defaultConfig {
+        minSdk 24
+        targetSdk 36
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
+    }
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_21
+    }
+    buildFeatures {
+        compose = true
+    }
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
+        }
+    }
+}
+
+dependencies {
+    // Compose BOM — manages all Compose artifact versions
+    api platform(libs.androidx.compose.bom)
+
+    // Kotlin
+    api libs.kotlin.coroutines.core
+    api libs.kotlin.coroutines.android
+
+    // AndroidX
+    api libs.androidx.core.ktx
+    api libs.androidx.appcompat
+
+    // Compose
+    api libs.androidx.compose.ui
+    api libs.androidx.compose.foundation
+    api libs.androidx.activity.compose
+    api libs.androidx.compose.material
+    api libs.androidx.compose.ui.tooling.preview
+    api libs.androidx.navigation.compose
+    // lifecycle-runtime-compose ships `repeatOnLifecycle` + the
+    // `LocalLifecycleOwner` used by `LifecycleAwareLaunchedEffect`. `api`
+    // (not `implementation`) so any sample wrapping a `while(true)` loop
+    // picks the helper up without re-declaring the dep. See #936.
+    api libs.androidx.lifecycle.runtime.compose
+    debugApi libs.androidx.compose.ui.tooling
+
+    // Material 3
+    api libs.androidx.compose.material3
+
+    // Material
+    api libs.google.material
+
+    // SceneView SDK — required by `rememberMaterialInstance` so the helper
+    // can call `MaterialLoader.createColorInstance` and own destruction.
+    // `api` so demo modules pick the SDK up transitively from :samples:common
+    // (which most already do anyway via their direct sceneview dep, but
+    // declaring it here keeps :samples:common's surface complete on its own).
+    api project(":sceneview")
+    api libs.filament.android
+
+    // Google Play In-App Updates — `api` so every Android-host sample
+    // (android-demo, android-tv-demo, …) picks up the same flexible-update
+    // wiring via `io.github.sceneview.sample.common.update.InAppUpdateManager`
+    // without re-declaring the dep.
+    api libs.play.app.update
+    api libs.play.app.update.ktx
+
+    // InAppUpdateManager unit tests — `FakeAppUpdateManager` ships INSIDE the
+    // runtime `app-update` artefact (Play Core ≥2.0 doesn't publish a separate
+    // `app-update-testing` jar). Robolectric so the Compose `mutableStateOf`
+    // properties can be read on the JVM without an emulator.
+    testImplementation libs.robolectric
+    testImplementation libs.androidx.test.junit
+    testImplementation "junit:junit:4.13.2"
+    // LifecycleAwareLaunchedEffect regression tests (#972) — `TestLifecycleOwner`
+    // drives a real lifecycle through onStart/onStop on the JVM so the helper's
+    // `repeatOnLifecycle(STARTED)` cancel/restart contract can be exercised.
+    testImplementation libs.androidx.lifecycle.runtime.testing
+    // `runTest` + `UnconfinedTestDispatcher` for the coroutine-based lifecycle
+    // and LifecyclePauseGate regression tests.
+    testImplementation libs.kotlin.coroutines.test
+}

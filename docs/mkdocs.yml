@@ -1,0 +1,169 @@
+site_name: SceneView — 3D & AR SDK
+site_description: "The #1 open-source 3D & AR SDK for Android and iOS. Compose-native scenes powered by Google Filament and ARCore on Android, SwiftUI and RealityKit on iOS. Drop-in SceneView{} and ARSceneView{} composables for model viewing, AR placement, physics, and immersive experiences."
+site_url: https://sceneview.github.io/
+repo_url: https://github.com/sceneview/sceneview
+repo_name: sceneview/sceneview
+edit_uri: edit/main/docs/docs/
+copyright: Copyright &copy; 2021-2026 Thomas Gorisse — Apache 2.0 License
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  font:
+    text: Inter
+    code: JetBrains Mono
+  icon:
+    logo: material/cube-outline
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.indexes
+    - navigation.instant
+    - navigation.instant.progress
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - content.action.edit
+    - toc.follow
+    - announce.dismiss
+
+nav:
+  - Home: index.md
+  - Try the Demo: try.md
+  - Get Started:
+    - Quickstart: quickstart.md
+    - Quickstart (Apple): quickstart-ios.md
+    - Quickstart (Web): quickstart-web.md
+    - Quickstart (TV): quickstart-tv.md
+    - Quickstart (Flutter): quickstart-flutter.md
+    - Quickstart (React Native): quickstart-react-native.md
+    - API Cheatsheet: cheatsheet.md
+    - API Cheatsheet (Apple): cheatsheet-ios.md
+    - Nodes Reference: nodes.md
+    - Recipes:
+      - Overview: recipes.md
+      - Blender asset pipeline: recipes/blender-pipeline.md
+      - iOS visual polish: recipes/ios-visual-polish.md
+      - Sketchfab streaming: recipes/sketchfab-streaming.md
+      - Demo settings sheet: recipes/demo-settings-sheet.md
+    - FAQ: faq.md
+    - Troubleshooting: troubleshooting.md
+  - Platforms: platforms.md
+  - Guides:
+    - Architecture: architecture.md
+    - Android XR: android-xr.md
+    - visionOS Spatial Computing: visionos-spatial.md
+    - Integrations: integrations.md
+    - AR Recording & Playback: ar-recording.md
+    - Performance: performance.md
+    - Testing: testing.md
+  - Features:
+    - Why SceneView: showcase.md
+    - Use Cases: use-cases.md
+    - AI-Assisted Development: ai-development.md
+    - vs. Alternatives: comparison.md
+    - v4.0 Preview: v4-preview.md
+  - Codelabs:
+    - codelabs/index.md
+    - 3D with Compose: codelabs/codelab-3d-compose.md
+    - AR with Compose: codelabs/codelab-ar-compose.md
+    - 3D with SwiftUI: codelabs/codelab-3d-swiftui.md
+    - AR with SwiftUI: codelabs/codelab-ar-swiftui.md
+    - Dynamic Sky: codelabs/guide-dynamic-sky.md
+    - Lines & Text: codelabs/guide-lines-text.md
+    - Physics: codelabs/guide-physics.md
+    - Reflection Probes: codelabs/guide-reflection-probes.md
+  - API:
+    - API (3D — sceneview): https://github.com/sceneview/sceneview/tree/main/sceneview
+    - API (AR — arsceneview): https://github.com/sceneview/sceneview/tree/main/arsceneview
+    - llms.txt (AI-first reference): https://github.com/sceneview/sceneview/blob/main/llms.txt
+  - Samples: samples.md
+  - Samples (Apple): samples-ios.md
+  - Community: community.md
+  - Contribute: contributing.md
+  - Changelog: changelog.md
+  - Migration Guide: migration.md
+
+extra:
+  analytics:
+    provider: google
+    # GA4 Property: SceneView Website | Stream ID: 14357002837
+    property: G-HX1JWGSMTH
+    feedback:
+      title: Was this page helpful?
+      ratings:
+        - icon: material/emoticon-happy-outline
+          name: This page was helpful
+          data: 1
+          note: Thanks for your feedback!
+        - icon: material/emoticon-sad-outline
+          name: This page could be improved
+          data: 0
+          note: Thanks, we'll work on improving this page.
+
+plugins:
+  - search
+  - social
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: kotlin
+          class: language-kotlin
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - def_list
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/sceneview/sceneview
+      name: SceneView on GitHub
+    - icon: fontawesome/brands/discord
+      link: https://discord.gg/UbNDDBTNqb
+      name: SceneView Discord
+    - icon: fontawesome/brands/npm
+      link: https://www.npmjs.com/package/sceneview-mcp
+      name: SceneView MCP on npm
+  generator: false
+  version:
+    provider: mike
+
+extra_css:
+  - stylesheets/extra.css

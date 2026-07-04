@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- AR is optional — app works without it -->
+    <uses-feature
+        android:name="android.hardware.camera.ar"
+        android:required="false" />
+
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Required by `SceneViewHaptic` (rememberHapticFeedback) — the sceneview
+         library deliberately doesn't auto-merge this permission, the demo app
+         opts in so the controls sheet, AR placement confirmations, and shutter
+         button can vibrate (#1901 phase 1). When absent, every haptic call
+         becomes a silent no-op + one Log.d. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Required by the Streetscape Geometry / Geospatial demos (3 of 35). ARCore
+         throws FineLocationPermissionNotGrantedException if Geospatial mode is
+         enabled without this permission — the demo composable requests it at
+         runtime before configuring the session, only on screens that need it.
+         The other 32 demos never trigger the runtime prompt.
+
+         Pair the permission with android:required="false" on the GPS feature so
+         the Play Store filter doesn't narrow the install audience to GPS-equipped
+         devices, and so reviewers see "uses precise location only when used"
+         rather than "always". (#891) -->
+    <!-- ACCESS_COARSE_LOCATION is required alongside FINE on API 31+ (CoarseFineLocation lint). -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-feature
+        android:name="android.hardware.location.gps"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.location"
+        android:required="false" />
+
+    <!-- Required for PermissionImpliesUnsupportedChromeOsHardware lint rule -->
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+
+    <!-- In-app feedback (#1933) — screen + microphone recording via
+         MediaProjection, captured by a foreground service while the user
+         demonstrates a bug. All opt-in and consent-gated.
+         FOREGROUND_SERVICE_MEDIA_PROJECTION was temporarily removed in #2120 to
+         unblock Play Store deploys (Play Console requires the app-content FGS
+         declaration before any AAB with this permission can be committed, but the
+         declaration section only appears once a build is already on a track).
+         The declaration has now been completed in Play Console; re-adding the
+         permission and the foregroundServiceType so screen recording works on
+         Android 14+ (#2188). -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:enableOnBackInvokedCallback="true"
+        android:fullBackupContent="@xml/backup_descriptor"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.SceneViewDemo">
+
+        <!-- ARCore metadata — optional -->
+        <meta-data
+            android:name="com.google.ar.core"
+            android:value="optional" />
+
+        <!-- ARCore Cloud API key — required for Geospatial, Streetscape Geometry,
+             and Cloud Anchors. Injected from local.properties (or the ARCORE_API_KEY
+             env var) at build time via the manifestPlaceholders in build.gradle.
+             Empty by default — when blank, the demo's runtime check disables the
+             features that need it and shows a clear status message instead of
+             crashing. See samples/android-demo/ARCORE_CLOUD_SETUP.md. -->
+        <meta-data
+            android:name="com.google.android.ar.API_KEY"
+            android:value="${arcoreApiKey}" />
+
+        <!-- FileProvider — surfaces app-private external storage (notably
+             `getExternalFilesDir("ar-recordings")`) as content:// URIs for
+             ACTION_SEND share intents. Used by ARRecordPlaybackDemo's
+             Share button. The authority is namespaced with `.fileprovider`
+             so it never collides with other modules' providers. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <!-- In-app feedback screen + mic recorder (#1933).
+             foregroundServiceType="mediaProjection" is required on Android 14+
+             so that startForeground(id, notification,
+             FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION) does not throw
+             MissingForegroundServiceTypeException (#2188 / #2120). -->
+        <service
+            android:name=".feedback.FeedbackRecordingService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|uiMode"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!--
+                Deep-link entry: scan a QR code on sceneview.github.io / README /
+                docs and land directly on the matching demo screen.
+                See website-static/.well-known/README.md for the verification
+                state and follow-up steps.
+            -->
+
+            <!-- Custom scheme — works on every install, no verification needed. -->
+            <intent-filter android:label="Open in SceneView">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="sceneview" android:host="demo" />
+            </intent-filter>
+
+            <!--
+                Verified App-Link over HTTPS — pairs with
+                `website-static/.well-known/assetlinks.json`, which lists
+                both the Play App Signing SHA-256 and the local upload key
+                so verification succeeds for Play Store installs AND for
+                local `adb install` / `assembleDebug` builds.
+                Verify on a phone via `adb shell pm get-app-links
+                io.github.sceneview.demo` (expected: "sceneview.github.io:
+                verified"); `pm verify-app-links` re-runs verification.
+            -->
+            <intent-filter android:label="Open in SceneView" android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="sceneview.github.io" android:pathPrefix="/open" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

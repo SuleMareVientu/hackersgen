@@ -1,0 +1,76 @@
+version: 2
+updates:
+  # GitHub Actions — keep action versions up to date
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "chore(ci)"
+
+  # Gradle — Android library and sample apps
+  - package-ecosystem: "gradle"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "chore(deps)"
+    # Ignore major version bumps that may break API compat — review manually
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+      # Filament runtime ↔ .filamat ABI invariant: a runtime bump WITHOUT
+      # recompiling every `.filamat` blob in the same PR ships a crash (cf.
+      # CLAUDE.md "Filament runtime ↔ .filamat ABI invariant"). Dependabot
+      # can't recompile blobs, so its filament bumps always fail quality-gate
+      # for the wrong reason — block them and let a contributor cut the bump
+      # plus the matc recompile in a single manual PR.
+      - dependency-name: "com.google.android.filament:*"
+      # Compose Material3 alphas now require AGP 9.1+ / compileSdk 37+ ahead
+      # of the rest of the toolchain. Re-enable when the project upgrades
+      # AGP (tracked separately in the maintenance dep-version-check report).
+      - dependency-name: "androidx.compose.material3:material3"
+        versions: [">=1.5.0-alpha19"]
+
+  # npm — MCP server
+  - package-ecosystem: "npm"
+    directory: "/mcp"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "chore(mcp)"
+
+  # npm — website JS
+  - package-ecosystem: "npm"
+    directory: "/website-static/js"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "chore(web)"
+
+  # pip — Python deps installed inside CI/publish workflows.
+  # The deps live in .github/workflows/requirements/*.txt (one file per
+  # workflow); the workflows `pip install -r` them. Dependabot's `pip`
+  # ecosystem only scans requirements files, never inline `pip install x==y`
+  # lines in workflow YAML — so this entry restores automated bumps (#1286).
+  - package-ecosystem: "pip"
+    directory: "/.github/workflows/requirements"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "chore(ci)"

@@ -1,0 +1,1280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https://www.googletagmanager.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' blob: https://www.google-analytics.com https://*.google-analytics.com https://*.analytics.google.com https://cdn.jsdelivr.net https://api.sketchfab.com https://media.sketchfab.com; frame-src https://app.rerun.io; worker-src 'self' blob:; base-uri 'self'; object-src 'none'">
+  <script>
+    (function() {
+      try {
+        var t = localStorage.getItem('sceneview-theme');
+        if (t !== 'dark' && t !== 'light') {
+          t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', t);
+      } catch(e) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    })();
+  </script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SceneView — One SDK, Every Screen</title>
+    <meta name="description" content="SceneView renders 3D natively on Android, iOS, macOS, visionOS, Web, TV, Flutter, and React Native — one API, every platform.">
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="https://sceneview.github.io/platforms-showcase.html">
+    <meta property="og:title" content="SceneView — One SDK, Every Screen">
+    <meta property="og:description" content="Native 3D rendering on Android, iOS, macOS, visionOS, Web, TV, Flutter, React Native.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://sceneview.github.io/platforms-showcase.html">
+    <meta property="og:image" content="https://sceneview.github.io/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="SceneView — one SDK, every screen">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="SceneView — One SDK, Every Screen">
+    <meta name="twitter:description" content="Native 3D rendering on Android, iOS, macOS, visionOS, Web, TV, Flutter, React Native.">
+    <meta name="twitter:image" content="https://sceneview.github.io/og-image.png">
+    <meta name="theme-color" content="#005bc1">
+    <meta property="og:site_name" content="SceneView">
+    <meta property="og:locale" content="en_US">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <link rel="stylesheet" href="styles.css">
+    <script src="js/filament/filament.js"></script>
+    <script src="js/sceneview.js?v=4.19.0"></script>
+    <style>
+        /* ===== PAGE LAYOUT ===== */
+        .platforms-page {
+            padding-top: var(--nav-height);
+        }
+
+        /* ===== HERO ===== */
+        .platforms-hero {
+            position: relative;
+            background: var(--gradient-hero);
+            color: #ffffff;
+            overflow: hidden;
+            padding: 96px var(--container-padding) 80px;
+            text-align: center;
+        }
+
+        .platforms-hero__glow {
+            position: absolute;
+            inset: 0;
+            opacity: 0.2;
+            pointer-events: none;
+        }
+
+        .platforms-hero__glow--left {
+            position: absolute;
+            top: -20%;
+            left: 20%;
+            width: 400px;
+            height: 400px;
+            background: #ffffff;
+            border-radius: 50%;
+            filter: blur(120px);
+        }
+
+        .platforms-hero__glow--right {
+            position: absolute;
+            bottom: -20%;
+            right: 20%;
+            width: 500px;
+            height: 500px;
+            background: var(--color-tertiary);
+            border-radius: 50%;
+            filter: blur(150px);
+        }
+
+        .platforms-hero__container {
+            position: relative;
+            z-index: 10;
+            max-width: var(--container-max);
+            margin: 0 auto;
+        }
+
+        .platforms-hero__badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            background: rgba(255, 255, 255, 0.15);
+            padding: 8px 20px;
+            border-radius: 9999px;
+            margin-bottom: 24px;
+            backdrop-filter: blur(8px);
+        }
+
+        .platforms-hero__badge .material-symbols-outlined {
+            font-size: 18px;
+        }
+
+        .platforms-hero__title {
+            font-size: clamp(2.5rem, 6vw, 4.5rem);
+            font-weight: 800;
+            letter-spacing: -0.04em;
+            line-height: 1.1;
+            margin-bottom: 20px;
+        }
+
+        .platforms-hero__description {
+            font-size: clamp(1rem, 2vw, 1.25rem);
+            opacity: 0.9;
+            line-height: 1.7;
+            max-width: 640px;
+            margin: 0 auto 40px;
+        }
+
+        .platforms-hero__stats {
+            display: flex;
+            justify-content: center;
+            gap: 48px;
+            flex-wrap: wrap;
+        }
+
+        .platforms-hero__stat {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .platforms-hero__stat-number {
+            font-size: 2rem;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+        }
+
+        .platforms-hero__stat-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            opacity: 0.7;
+        }
+
+        /* ===== PLATFORM CARDS SECTION ===== */
+        .platforms-section {
+            max-width: var(--container-max);
+            margin: 0 auto;
+            padding: 80px var(--container-padding);
+        }
+
+        .platforms-section__header {
+            text-align: center;
+            margin-bottom: 56px;
+        }
+
+        .platforms-section__title {
+            font-size: clamp(1.75rem, 4vw, 2.5rem);
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            color: var(--color-on-surface);
+            margin-bottom: 12px;
+        }
+
+        .platforms-section__subtitle {
+            font-size: 1.1rem;
+            color: var(--color-on-surface-variant);
+            max-width: 560px;
+            margin: 0 auto;
+        }
+
+        /* ===== PLATFORM GRID ===== */
+        .platforms-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+        }
+
+        /* ===== PLATFORM CARD ===== */
+        .platform-card {
+            background: var(--color-surface-container-lowest);
+            border: 1px solid var(--color-outline-variant);
+            border-radius: 20px;
+            padding: 32px 28px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            transition: transform var(--duration-medium) var(--ease-spring),
+                        box-shadow var(--duration-medium) var(--ease-expressive);
+        }
+
+        .platform-card:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-xl);
+        }
+
+        .platform-card--featured {
+            grid-column: span 2;
+        }
+
+        .platform-card__header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .platform-card__icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .platform-card__icon--android {
+            background: rgba(120, 194, 87, 0.12);
+            color: #78C257;
+        }
+
+        .platform-card__icon--ios {
+            background: rgba(153, 153, 153, 0.12);
+            color: var(--color-on-surface-variant);
+        }
+
+        .platform-card__icon--macos {
+            background: rgba(100, 70, 205, 0.12);
+            color: var(--color-tertiary);
+        }
+
+        .platform-card__icon--visionos {
+            background: rgba(100, 70, 205, 0.12);
+            color: var(--color-tertiary);
+        }
+
+        .platform-card__icon--web {
+            background: rgba(0, 91, 193, 0.12);
+            color: var(--color-primary);
+        }
+
+        .platform-card__icon--desktop {
+            background: rgba(76, 95, 133, 0.12);
+            color: var(--color-on-surface-variant);
+        }
+
+        .platform-card__icon--tv {
+            background: rgba(120, 194, 87, 0.12);
+            color: #78C257;
+        }
+
+        .platform-card__icon--flutter {
+            background: rgba(2, 119, 189, 0.12);
+            color: #0277BD;
+        }
+
+        .platform-card__icon--react-native {
+            background: rgba(97, 218, 251, 0.12);
+            color: #61DAFB;
+        }
+
+        .platform-card__icon .material-symbols-outlined {
+            font-size: 28px;
+        }
+
+        .platform-card__info {
+            flex: 1;
+        }
+
+        .platform-card__name {
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: var(--color-on-surface);
+            letter-spacing: -0.02em;
+        }
+
+        .platform-card__renderer {
+            font-size: 0.8rem;
+            color: var(--color-on-surface-variant);
+            font-weight: 500;
+        }
+
+        /* ===== STATUS BADGES ===== */
+        .platform-card__badge {
+            font-size: 0.65rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            padding: 4px 12px;
+            border-radius: 9999px;
+            white-space: nowrap;
+        }
+
+        .platform-card__badge--stable {
+            background: rgba(22, 163, 74, 0.12);
+            color: var(--color-status-stable);
+        }
+
+        .platform-card__badge--alpha {
+            background: rgba(124, 58, 237, 0.12);
+            color: var(--color-status-alpha);
+        }
+
+        .platform-card__badge--beta {
+            background: rgba(37, 99, 235, 0.12);
+            color: var(--color-status-beta);
+        }
+
+        .platform-card__badge--planned {
+            background: rgba(76, 95, 133, 0.12);
+            color: var(--color-status-soon);
+        }
+
+        .platform-card__description {
+            font-size: 0.9rem;
+            color: var(--color-on-surface-variant);
+            line-height: 1.6;
+        }
+
+        .platform-card__code {
+            background: var(--color-surface-container);
+            border: 1px solid var(--color-outline-variant);
+            border-radius: 12px;
+            padding: 16px 20px;
+            overflow-x: auto;
+        }
+
+        .platform-card__code pre {
+            margin: 0;
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            line-height: 1.6;
+            color: var(--color-on-surface);
+        }
+
+        .platform-card__code .code-keyword {
+            color: var(--color-tertiary);
+        }
+
+        .platform-card__code .code-string {
+            color: var(--color-status-stable);
+        }
+
+        .platform-card__code .code-comment {
+            color: var(--color-on-surface-variant);
+            opacity: 0.7;
+        }
+
+        .platform-card__code .code-function {
+            color: var(--color-primary);
+        }
+
+        [data-theme="dark"] .platform-card__code {
+            background: var(--color-surface-container-lowest);
+        }
+
+        /* ===== 3D VIEWER CARD ===== */
+        .platform-card__viewer {
+            border-radius: 12px;
+            overflow: hidden;
+            background: linear-gradient(180deg, #1a1a2e 0%, #0d0d1a 100%);
+            aspect-ratio: 16/10;
+            position: relative;
+        }
+
+        .platform-card__viewer canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        /* ===== ARCHITECTURE SECTION ===== */
+        .architecture-section {
+            background: var(--color-surface-container-low);
+            padding: 80px var(--container-padding);
+        }
+
+        .architecture-section__container {
+            max-width: var(--container-max);
+            margin: 0 auto;
+        }
+
+        .architecture-section__header {
+            text-align: center;
+            margin-bottom: 56px;
+        }
+
+        .architecture-section__title {
+            font-size: clamp(1.75rem, 4vw, 2.5rem);
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            color: var(--color-on-surface);
+            margin-bottom: 12px;
+        }
+
+        .architecture-section__subtitle {
+            font-size: 1.1rem;
+            color: var(--color-on-surface-variant);
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        /* ===== ARCHITECTURE DIAGRAM ===== */
+        .architecture-diagram {
+            max-width: 900px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .architecture-diagram__layer {
+            background: var(--color-surface-container-lowest);
+            border: 1px solid var(--color-outline-variant);
+            border-radius: 16px;
+            padding: 24px 28px;
+            text-align: center;
+        }
+
+        .architecture-diagram__layer--core {
+            border-color: var(--color-primary);
+            border-width: 2px;
+        }
+
+        .architecture-diagram__layer-label {
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--color-on-surface-variant);
+            margin-bottom: 8px;
+        }
+
+        .architecture-diagram__layer-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--color-on-surface);
+            margin-bottom: 4px;
+        }
+
+        .architecture-diagram__layer-desc {
+            font-size: 0.85rem;
+            color: var(--color-on-surface-variant);
+            font-family: var(--font-mono);
+        }
+
+        .architecture-diagram__branches {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+
+        .architecture-diagram__connector {
+            display: flex;
+            justify-content: center;
+            color: var(--color-outline-variant);
+        }
+
+        .architecture-diagram__connector .material-symbols-outlined {
+            font-size: 32px;
+        }
+
+        /* ===== COMPARISON TABLE ===== */
+        .comparison-section {
+            max-width: var(--container-max);
+            margin: 0 auto;
+            padding: 80px var(--container-padding);
+        }
+
+        .comparison-section__header {
+            text-align: center;
+            margin-bottom: 56px;
+        }
+
+        .comparison-section__title {
+            font-size: clamp(1.75rem, 4vw, 2.5rem);
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            color: var(--color-on-surface);
+            margin-bottom: 12px;
+        }
+
+        .comparison-section__subtitle {
+            font-size: 1.1rem;
+            color: var(--color-on-surface-variant);
+        }
+
+        .comparison-table {
+            width: 100%;
+            overflow-x: auto;
+        }
+
+        .comparison-table table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        .comparison-table th {
+            text-align: left;
+            font-weight: 700;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--color-on-surface-variant);
+            padding: 16px 20px;
+            border-bottom: 2px solid var(--color-outline-variant);
+            white-space: nowrap;
+        }
+
+        .comparison-table td {
+            padding: 16px 20px;
+            color: var(--color-on-surface);
+            border-bottom: 1px solid var(--color-outline-variant);
+            vertical-align: middle;
+        }
+
+        .comparison-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .comparison-table__platform {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 600;
+        }
+
+        .comparison-table__platform .material-symbols-outlined {
+            font-size: 20px;
+            color: var(--color-primary);
+        }
+
+        .comparison-table__check {
+            color: var(--color-status-stable);
+        }
+
+        .comparison-table__dash {
+            color: var(--color-outline-variant);
+        }
+
+        /* ===== CTA SECTION ===== */
+        .platforms-cta {
+            background: var(--gradient-hero);
+            color: #ffffff;
+            padding: 80px var(--container-padding);
+            text-align: center;
+        }
+
+        .platforms-cta__container {
+            max-width: 640px;
+            margin: 0 auto;
+        }
+
+        .platforms-cta__title {
+            font-size: clamp(1.75rem, 4vw, 2.5rem);
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            margin-bottom: 16px;
+        }
+
+        .platforms-cta__description {
+            font-size: 1.1rem;
+            opacity: 0.9;
+            margin-bottom: 32px;
+        }
+
+        .platforms-cta__actions {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .platforms-cta__btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 700;
+            font-size: 1rem;
+            padding: 14px 28px;
+            border-radius: 9999px;
+            transition: transform var(--duration-short) var(--ease-spring),
+                        box-shadow var(--duration-short);
+        }
+
+        .platforms-cta__btn:active {
+            transform: scale(0.95);
+        }
+
+        .platforms-cta__btn--primary {
+            background: var(--color-surface-container-lowest);
+            color: var(--color-primary);
+            box-shadow: var(--shadow-xl);
+        }
+
+        [data-theme="dark"] .platforms-cta__btn--primary {
+            background: #ffffff;
+            color: #005bc1;
+        }
+
+        .platforms-cta__btn--primary:hover {
+            transform: scale(1.05);
+        }
+
+        .platforms-cta__btn--outline {
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            color: #ffffff;
+        }
+
+        .platforms-cta__btn--outline:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        /* ===== RESPONSIVE ===== */
+        @media (max-width: 1024px) {
+            .platforms-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .platform-card--featured {
+                grid-column: span 2;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .platforms-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .platform-card--featured {
+                grid-column: span 1;
+            }
+
+            .architecture-diagram__branches {
+                grid-template-columns: 1fr;
+            }
+
+            .platforms-hero__stats {
+                gap: 32px;
+            }
+
+            .platforms-hero {
+                padding: 72px var(--container-padding) 56px;
+            }
+
+            .platforms-section,
+            .comparison-section {
+                padding: 56px var(--container-padding);
+            }
+        }
+
+        @media (max-width: 600px) {
+            .platforms-hero__stats {
+                gap: 24px;
+            }
+
+            .platforms-hero__stat-number {
+                font-size: 1.5rem;
+            }
+
+            .platform-card {
+                padding: 24px 20px;
+            }
+
+            .nav__links {
+                display: none;
+            }
+
+            .nav__hamburger--mobile {
+                display: flex;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .comparison-table {
+                font-size: 0.8rem;
+            }
+
+            .comparison-table th,
+            .comparison-table td {
+                padding: 12px 14px;
+            }
+        }
+    </style>
+  <link href="assets/fonts/fonts.css" rel="stylesheet">
+</head>
+<body>
+<div class="platforms-page">
+
+  <!-- ===== NAVIGATION ===== -->
+  <nav class="nav" id="nav">
+    <div class="nav__container">
+      <a href="/" class="nav__brand" aria-label="SceneView SDK — home">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="28" height="28" aria-hidden="true" style="flex-shrink:0">
+          <defs>
+            <linearGradient id="navTopGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8AB4F8"/><stop offset="100%" stop-color="#42A5F5"/></linearGradient>
+            <linearGradient id="navRightGrad" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#4A90D9"/><stop offset="100%" stop-color="#005BC1"/></linearGradient>
+            <linearGradient id="navLeftGrad" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#005BC1"/><stop offset="100%" stop-color="#0D47A1"/></linearGradient>
+          </defs>
+          <polygon points="256,272 122,194 122,340 256,418" fill="url(#navLeftGrad)"/>
+          <polygon points="256,272 390,194 390,340 256,418" fill="url(#navRightGrad)"/>
+          <polygon points="256,126 390,204 256,282 122,204" fill="url(#navTopGrad)"/>
+          <polyline points="96,120 96,82 134,82" fill="none" stroke="#005BC1" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+          <polyline points="416,120 416,82 378,82" fill="none" stroke="#005BC1" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+          <polyline points="96,392 96,430 134,430" fill="none" stroke="#005BC1" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+          <polyline points="416,392 416,430 378,430" fill="none" stroke="#005BC1" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>SceneView SDK</span>
+      </a>
+
+      <div class="nav__links" id="navLinks">
+        <a href="/#features" class="nav__link">Features</a>
+        <a href="/showcase.html" class="nav__link">Showcase</a>
+        <a href="/playground.html" class="nav__link">Playground</a>
+        <a href="/docs.html" class="nav__link" target="_blank" rel="noopener">Docs</a>
+        <a href="https://sceneview-mcp.mcp-tools-lab.workers.dev/pricing" class="nav__link" target="_blank" rel="noopener">Pricing</a>
+        <button class="nav__theme-toggle" id="themeToggle" aria-label="Toggle dark mode">
+          <svg class="icon-sun" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+          </svg>
+          <svg class="icon-moon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="nav__actions">
+        <a href="https://github.com/sceneview/sceneview" class="nav__icon-btn" target="_blank" rel="noopener" aria-label="View on GitHub">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+          </svg>
+        </a>
+        <button class="nav__hamburger nav__hamburger--mobile" id="hamburgerMobile" aria-label="Toggle menu">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <main>
+  <!-- ===== HERO ===== -->
+  <section class="platforms-hero">
+    <div class="platforms-hero__glow">
+      <div class="platforms-hero__glow--left"></div>
+      <div class="platforms-hero__glow--right"></div>
+    </div>
+    <div class="platforms-hero__container reveal">
+      <div class="platforms-hero__badge">
+        <span class="material-symbols-outlined">devices</span>
+        Platform Showcase
+      </div>
+      <h1 class="platforms-hero__title">One SDK, Every Screen</h1>
+      <p class="platforms-hero__description">
+        SceneView delivers native 3D rendering across 9 platforms using each platform's native renderer. One API, every screen, zero compromise.
+      </p>
+      <div class="platforms-hero__stats">
+        <div class="platforms-hero__stat">
+          <div class="platforms-hero__stat-number">9</div>
+          <div class="platforms-hero__stat-label">Platforms</div>
+        </div>
+        <div class="platforms-hero__stat">
+          <div class="platforms-hero__stat-number">2</div>
+          <div class="platforms-hero__stat-label">Renderers</div>
+        </div>
+        <div class="platforms-hero__stat">
+          <div class="platforms-hero__stat-number">5</div>
+          <div class="platforms-hero__stat-label">Frameworks</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== PLATFORM CARDS ===== -->
+  <section class="platforms-section">
+    <div class="platforms-section__header reveal">
+      <h2 class="platforms-section__title">Supported Platforms</h2>
+      <p class="platforms-section__subtitle">Native renderer per platform. Filament on Android and Web, RealityKit on Apple.</p>
+    </div>
+
+    <div class="platforms-grid">
+
+      <!-- Android -->
+      <div class="platform-card platform-card--featured reveal">
+        <div class="platform-card__header">
+          <div class="platform-card__icon platform-card__icon--android">
+            <img src="assets/brand/android.svg" alt="" class="platform-card__icon-img">
+          </div>
+          <div class="platform-card__info">
+            <div class="platform-card__name">Android</div>
+            <div class="platform-card__renderer">Jetpack Compose + Filament</div>
+          </div>
+          <span class="platform-card__badge platform-card__badge--stable">Stable</span>
+        </div>
+        <p class="platform-card__description">Full 3D and AR support via Jetpack Compose. Declarative scene graph with composable nodes. ARCore integration for augmented reality.</p>
+        <div class="platform-card__code">
+          <pre><span class="code-comment">// 3D Scene</span>
+<span class="code-function">SceneView</span> {
+    <span class="code-keyword">val</span> model = <span class="code-function">rememberModelInstance</span>(modelLoader, <span class="code-string">"models/robot.glb"</span>)
+    model?.<span class="code-function">let</span> { <span class="code-function">ModelNode</span>(it) }
+}
+
+<span class="code-comment">// AR Scene</span>
+<span class="code-function">ARSceneView</span> {
+    <span class="code-function">AnchorNode</span>(anchor) { <span class="code-function">ModelNode</span>(model) }
+}</pre>
+        </div>
+        <div class="platform-card__viewer">
+          <canvas id="sv-viewer-1"></canvas>
+        </div>
+      </div>
+
+      <!-- iOS -->
+      <div class="platform-card reveal">
+        <div class="platform-card__header">
+          <div class="platform-card__icon platform-card__icon--ios">
+            <img src="assets/brand/apple.svg" alt="" class="platform-card__icon-img">
+          </div>
+          <div class="platform-card__info">
+            <div class="platform-card__name">iOS</div>
+            <div class="platform-card__renderer">SwiftUI + RealityKit</div>
+          </div>
+          <span class="platform-card__badge platform-card__badge--alpha">Alpha</span>
+        </div>
+        <p class="platform-card__description">Native SwiftUI views with RealityKit rendering. SPM integration in one line. ARKit for augmented reality.</p>
+        <div class="platform-card__code">
+          <pre><span class="code-function">SceneView</span> {
+    <span class="code-function">ModelNode</span>(
+        url: <span class="code-string">"robot.usdz"</span>
+    )
+}
+
+<span class="code-function">ARSceneView</span> {
+    <span class="code-function">AnchorNode</span>(anchor) {
+        <span class="code-function">ModelNode</span>(url: <span class="code-string">"robot.usdz"</span>)
+    }
+}</pre>
+        </div>
+        <div class="platform-card__viewer">
+          <canvas id="sv-viewer-2"></canvas>
+        </div>
+      </div>
+
+      <!-- macOS -->
+      <div class="platform-card reveal">
+        <div class="platform-card__header">
+          <div class="platform-card__icon platform-card__icon--macos">
+            <img src="assets/brand/apple.svg" alt="" class="platform-card__icon-img">
+          </div>
+          <div class="platform-card__info">
+            <div class="platform-card__name">macOS</div>
+            <div class="platform-card__renderer">SwiftUI + RealityKit</div>
+          </div>
+          <span class="platform-card__badge platform-card__badge--alpha">Alpha</span>
+        </div>
+        <p class="platform-card__description">Same SceneViewSwift API on macOS. Desktop-class 3D experiences with native Metal rendering via RealityKit.</p>
+        <div class="platform-card__code">
+          <pre><span class="code-comment">// Same API as iOS</span>
+<span class="code-function">SceneView</span> {
+    <span class="code-function">ModelNode</span>(
+        url: <span class="code-string">"product.usdz"</span>
+    )
+}</pre>
+        </div>
+      </div>
+
+      <!-- visionOS -->
+      <div class="platform-card platform-card--featured reveal">
+        <div class="platform-card__header">
+          <div class="platform-card__icon platform-card__icon--visionos">
+            <img src="assets/brand/apple.svg" alt="" class="platform-card__icon-img">
+          </div>
+          <div class="platform-card__info">
+            <div class="platform-card__name">visionOS</div>
+            <div class="platform-card__renderer">SwiftUI + RealityKit</div>
+          </div>
+          <span class="platform-card__badge platform-card__badge--alpha">Alpha</span>
+        </div>
+        <p class="platform-card__description">Apple Vision Pro spatial computing. Immersive spaces, hand tracking, and spatial anchors. RealityKit is the only path to visionOS.</p>
+        <div class="platform-card__code">
+          <pre><span class="code-comment">// Immersive space on Vision Pro</span>
+<span class="code-function">ImmersiveSpace</span> {
+    <span class="code-function">RealityView</span> { content <span class="code-keyword">in</span>
+        content.<span class="code-function">add</span>(
+            <span class="code-function">ModelEntity</span>(named: <span class="code-string">"scene.usdz"</span>)
+        )
+    }
+}</pre>
+        </div>
+        <div class="platform-card__viewer">
+          <canvas id="sv-viewer-3"></canvas>
+        </div>
+      </div>
+
+      <!-- Web -->
+      <div class="platform-card reveal">
+        <div class="platform-card__header">
+          <div class="platform-card__icon platform-card__icon--web">
+            <img src="assets/brand/html5.svg" alt="" class="platform-card__icon-img">
+          </div>
+          <div class="platform-card__info">
+            <div class="platform-card__name">Web</div>
+            <div class="platform-card__renderer">Kotlin/JS + Filament.js</div>
+          </div>
+          <span class="platform-card__badge platform-card__badge--alpha">Alpha</span>
+        </div>
+        <p class="platform-card__description">Same Filament engine as Android, running in the browser via WebAssembly. WebGL2 rendering with WebXR AR/VR support.</p>
+        <div class="platform-card__code">
+          <pre><span class="code-function">SceneView</span>.<span class="code-function">modelViewer</span>(
+    <span class="code-string">'canvas-id'</span>,
+    <span class="code-string">'models/robot.glb'</span>
+)</pre>
+        </div>
+        <div class="platform-card__viewer">
+          <canvas id="sv-viewer-5"></canvas>
+        </div>
+      </div>
+
+      <!-- Android TV -->
+      <div class="platform-card reveal">
+        <div class="platform-card__header">
+          <div class="platform-card__icon platform-card__icon--tv">
+            <img src="assets/brand/android.svg" alt="" class="platform-card__icon-img">
+          </div>
+          <div class="platform-card__info">
+            <div class="platform-card__name">Android TV</div>
+            <div class="platform-card__renderer">Compose TV + Filament</div>
+          </div>
+          <span class="platform-card__badge platform-card__badge--alpha">Alpha</span>
+        </div>
+        <p class="platform-card__description">D-pad navigation, model cycling, auto-rotation. Big-screen 3D experiences optimized for living rooms.</p>
+        <div class="platform-card__code">
+          <pre><span class="code-comment">// Same SceneView composable</span>
+<span class="code-function">SceneView</span>(
+    modifier = Modifier
+        .<span class="code-function">focusable</span>()
+        .<span class="code-function">onKeyEvent</span> { <span class="code-comment">/* D-pad */</span> }
+) { <span class="code-function">ModelNode</span>(model) }</pre>
+        </div>
+        <div class="platform-card__viewer">
+          <canvas id="sv-viewer-4"></canvas>
+        </div>
+      </div>
+
+      <!-- Desktop -->
+      <div class="platform-card reveal">
+        <div class="platform-card__header">
+          <div class="platform-card__icon platform-card__icon--desktop">
+            <img src="assets/brand/jetbrains.svg" alt="" class="platform-card__icon-img">
+          </div>
+          <div class="platform-card__info">
+            <div class="platform-card__name">Desktop</div>
+            <div class="platform-card__renderer">Compose Desktop (wireframe)</div>
+          </div>
+          <span class="platform-card__badge platform-card__badge--planned">Planned</span>
+        </div>
+        <p class="platform-card__description">Wireframe placeholder using Compose Canvas. Filament JNI not yet available on desktop. Full support planned.</p>
+      </div>
+
+      <!-- Flutter -->
+      <div class="platform-card reveal">
+        <div class="platform-card__header">
+          <div class="platform-card__icon platform-card__icon--flutter">
+            <img src="assets/brand/flutter.svg" alt="" class="platform-card__icon-img">
+          </div>
+          <div class="platform-card__info">
+            <div class="platform-card__name">Flutter</div>
+            <div class="platform-card__renderer">PlatformView bridge</div>
+          </div>
+          <span class="platform-card__badge platform-card__badge--alpha">Alpha</span>
+        </div>
+        <p class="platform-card__description">Flutter plugin with PlatformView wrapping native SceneView on Android (Filament) and iOS (RealityKit).</p>
+        <div class="platform-card__code">
+          <pre><span class="code-function">SceneViewWidget</span>(
+    model: <span class="code-string">'models/robot.glb'</span>,
+    autoRotate: <span class="code-keyword">true</span>,
+)</pre>
+        </div>
+      </div>
+
+      <!-- React Native -->
+      <div class="platform-card reveal">
+        <div class="platform-card__header">
+          <div class="platform-card__icon platform-card__icon--react-native">
+            <img src="assets/brand/react.svg" alt="" class="platform-card__icon-img">
+          </div>
+          <div class="platform-card__info">
+            <div class="platform-card__name">React Native</div>
+            <div class="platform-card__renderer">Fabric bridge</div>
+          </div>
+          <span class="platform-card__badge platform-card__badge--alpha">Alpha</span>
+        </div>
+        <p class="platform-card__description">React Native Turbo Module with Fabric component bridging to native SceneView on Android and iOS.</p>
+        <div class="platform-card__code">
+          <pre>&lt;<span class="code-function">SceneView</span>
+    model={<span class="code-string">"models/robot.glb"</span>}
+    autoRotate={<span class="code-keyword">true</span>}
+/&gt;</pre>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ===== ARCHITECTURE ===== -->
+  <section class="architecture-section">
+    <div class="architecture-section__container">
+      <div class="architecture-section__header reveal">
+        <h2 class="architecture-section__title">Architecture</h2>
+        <p class="architecture-section__subtitle">Shared logic in Kotlin Multiplatform, native renderer per platform. No compromise on performance.</p>
+      </div>
+
+      <div class="architecture-diagram reveal">
+        <div class="architecture-diagram__layer architecture-diagram__layer--core">
+          <div class="architecture-diagram__layer-label">Shared Core (KMP)</div>
+          <div class="architecture-diagram__layer-title">sceneview-core</div>
+          <div class="architecture-diagram__layer-desc">math, collision, geometry, animations, physics</div>
+        </div>
+
+        <div class="architecture-diagram__connector">
+          <span class="material-symbols-outlined">arrow_downward</span>
+        </div>
+
+        <div class="architecture-diagram__branches">
+          <div class="architecture-diagram__layer">
+            <div class="architecture-diagram__layer-label">Android Renderer</div>
+            <div class="architecture-diagram__layer-title">sceneview</div>
+            <div class="architecture-diagram__layer-desc">Filament + Jetpack Compose</div>
+          </div>
+          <div class="architecture-diagram__layer">
+            <div class="architecture-diagram__layer-label">Apple Renderer</div>
+            <div class="architecture-diagram__layer-title">SceneViewSwift</div>
+            <div class="architecture-diagram__layer-desc">RealityKit + SwiftUI</div>
+          </div>
+        </div>
+
+        <div class="architecture-diagram__connector">
+          <span class="material-symbols-outlined">arrow_downward</span>
+        </div>
+
+        <div class="architecture-diagram__branches">
+          <div class="architecture-diagram__layer">
+            <div class="architecture-diagram__layer-label">UI Layer</div>
+            <div class="architecture-diagram__layer-title">Compose UI</div>
+            <div class="architecture-diagram__layer-desc">SceneView { }, ARSceneView { }</div>
+          </div>
+          <div class="architecture-diagram__layer">
+            <div class="architecture-diagram__layer-label">UI Layer</div>
+            <div class="architecture-diagram__layer-title">SwiftUI</div>
+            <div class="architecture-diagram__layer-desc">SceneView { }, ARSceneView { }</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== COMPARISON TABLE ===== -->
+  <section class="comparison-section">
+    <div class="comparison-section__header reveal">
+      <h2 class="comparison-section__title">Feature Comparison</h2>
+      <p class="comparison-section__subtitle">What each platform supports today</p>
+    </div>
+
+    <div class="comparison-table reveal">
+      <table>
+        <thead>
+          <tr>
+            <th>Platform</th>
+            <th>Renderer</th>
+            <th>3D</th>
+            <th>AR</th>
+            <th>Status</th>
+            <th>Framework</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <div class="comparison-table__platform">
+                <img src="assets/brand/android.svg" alt="" class="comparison-table__platform-img">
+                Android
+              </div>
+            </td>
+            <td>Filament</td>
+            <td><span class="comparison-table__check material-symbols-outlined">check_circle</span></td>
+            <td><span class="comparison-table__check material-symbols-outlined">check_circle</span></td>
+            <td><span class="platform-card__badge platform-card__badge--stable">Stable</span></td>
+            <td>Jetpack Compose</td>
+          </tr>
+          <tr>
+            <td>
+              <div class="comparison-table__platform">
+                <img src="assets/brand/apple.svg" alt="" class="comparison-table__platform-img">
+                iOS
+              </div>
+            </td>
+            <td>RealityKit</td>
+            <td><span class="comparison-table__check material-symbols-outlined">check_circle</span></td>
+            <td><span class="comparison-table__check material-symbols-outlined">check_circle</span></td>
+            <td><span class="platform-card__badge platform-card__badge--alpha">Alpha</span></td>
+            <td>SwiftUI</td>
+          </tr>
+          <tr>
+            <td>
+              <div class="comparison-table__platform">
+                <img src="assets/brand/apple.svg" alt="" class="comparison-table__platform-img">
+                macOS
+              </div>
+            </td>
+            <td>RealityKit</td>
+            <td><span class="comparison-table__check material-symbols-outlined">check_circle</span></td>
+            <td><span class="comparison-table__dash material-symbols-outlined">remove</span></td>
+            <td><span class="platform-card__badge platform-card__badge--alpha">Alpha</span></td>
+            <td>SwiftUI</td>
+          </tr>
+          <tr>
+            <td>
+              <div class="comparison-table__platform">
+                <img src="assets/brand/apple.svg" alt="" class="comparison-table__platform-img">
+                visionOS
+              </div>
+            </td>
+            <td>RealityKit</td>
+            <td><span class="comparison-table__check material-symbols-outlined">check_circle</span></td>
+            <td><span class="comparison-table__check material-symbols-outlined">check_circle</span></td>
+            <td><span class="platform-card__badge platform-card__badge--alpha">Alpha</span></td>
+            <td>SwiftUI</td>
+          </tr>
+          <tr>
+            <td>
+              <div class="comparison-table__platform">
+                <img src="assets/brand/html5.svg" alt="" class="comparison-table__platform-img">
+                Web
+              </div>
+            </td>
+            <td>Filament.js</td>
+            <td><span class="comparison-table__check material-symbols-outlined">check_circle</span></td>
+            <td><span class="comparison-table__check material-symbols-outlined">check_circle</span></td>
+            <td><span class="platform-card__badge platform-card__badge--alpha">Alpha</span></td>
+            <td>Kotlin/JS</td>
+          </tr>
+          <tr>
+            <td>
+              <div class="comparison-table__platform">
+                <img src="assets/brand/jetbrains.svg" alt="" class="comparison-table__platform-img">
+                Desktop
+              </div>
+            </td>
+            <td>Canvas</td>
+            <td><span class="comparison-table__dash material-symbols-outlined">remove</span></td>
+            <td><span class="comparison-table__dash material-symbols-outlined">remove</span></td>
+            <td><span class="platform-card__badge platform-card__badge--planned">Planned</span></td>
+            <td>Compose Desktop</td>
+          </tr>
+          <tr>
+            <td>
+              <div class="comparison-table__platform">
+                <img src="assets/brand/android.svg" alt="" class="comparison-table__platform-img">
+                Android TV
+              </div>
+            </td>
+            <td>Filament</td>
+            <td><span class="comparison-table__check material-symbols-outlined">check_circle</span></td>
+            <td><span class="comparison-table__dash material-symbols-outlined">remove</span></td>
+            <td><span class="platform-card__badge platform-card__badge--alpha">Alpha</span></td>
+            <td>Compose TV</td>
+          </tr>
+          <tr>
+            <td>
+              <div class="comparison-table__platform">
+                <img src="assets/brand/flutter.svg" alt="" class="comparison-table__platform-img">
+                Flutter
+              </div>
+            </td>
+            <td>Native</td>
+            <td><span class="comparison-table__check material-symbols-outlined">check_circle</span></td>
+            <td><span class="comparison-table__check material-symbols-outlined">check_circle</span></td>
+            <td><span class="platform-card__badge platform-card__badge--alpha">Alpha</span></td>
+            <td>PlatformView</td>
+          </tr>
+          <tr>
+            <td>
+              <div class="comparison-table__platform">
+                <img src="assets/brand/react.svg" alt="" class="comparison-table__platform-img">
+                React Native
+              </div>
+            </td>
+            <td>Native</td>
+            <td><span class="comparison-table__check material-symbols-outlined">check_circle</span></td>
+            <td><span class="comparison-table__check material-symbols-outlined">check_circle</span></td>
+            <td><span class="platform-card__badge platform-card__badge--alpha">Alpha</span></td>
+            <td>Fabric</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ===== CTA ===== -->
+  <section class="platforms-cta">
+    <div class="platforms-cta__container reveal">
+      <h2 class="platforms-cta__title">Start Building Today</h2>
+      <p class="platforms-cta__description">One SDK, every screen. Add native 3D to your app in minutes.</p>
+      <div class="platforms-cta__actions">
+        <a href="/docs.html" class="platforms-cta__btn platforms-cta__btn--primary" target="_blank" rel="noopener">
+          <span class="material-symbols-outlined">menu_book</span>
+          Documentation
+        </a>
+        <a href="https://github.com/sceneview/sceneview" class="platforms-cta__btn platforms-cta__btn--outline" target="_blank" rel="noopener">
+          <span class="material-symbols-outlined">code</span>
+          View on GitHub
+        </a>
+      </div>
+    </div>
+  </section>
+
+  </main>
+
+  <!-- ===== FOOTER ===== -->
+  <footer class="footer">
+    <div class="footer__container">
+      <div class="footer__grid">
+        <div class="footer__brand-col">
+          <div class="footer__brand-name">SceneView SDK</div>
+          <p class="footer__brand-desc">The architectural logic for building high-performance 3D spatial experiences across all modern platforms.</p>
+          <div class="footer__copyright">&copy; 2026 SceneView SDK. Architectural Logic.</div>
+        </div>
+        <div class="footer__col">
+          <h4 class="footer__col-title">Documentation</h4>
+          <ul class="footer__col-list">
+            <li><a href="/docs.html" target="_blank" rel="noopener">Examples</a></li>
+            <li><a href="/showcase.html">Showcase</a></li>
+          </ul>
+        </div>
+        <div class="footer__col">
+          <h4 class="footer__col-title">Community</h4>
+          <ul class="footer__col-list">
+            <li><a href="https://github.com/sceneview/sceneview" target="_blank" rel="noopener">GitHub</a></li>
+            <li><a href="https://discord.gg/sceneview" target="_blank" rel="noopener">Discord</a></li>
+            <li><a href="https://twitter.com/nicoadams_" target="_blank" rel="noopener">Twitter</a></li>
+          </ul>
+        </div>
+        <div class="footer__col">
+          <h4 class="footer__col-title">Legal</h4>
+          <ul class="footer__col-list">
+            <li><a href="/privacy.html">Privacy</a></li>
+            <li><a href="https://github.com/sceneview/sceneview/blob/main/LICENSE" target="_blank" rel="noopener">Terms</a></li>
+            <li><a href="https://github.com/sceneview/sceneview/blob/main/LICENSE" target="_blank" rel="noopener">License</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+</div>
+
+<script>
+    SceneView.modelViewer('sv-viewer-1', 'models/platforms/DamagedHelmet.glb');
+    SceneView.modelViewer('sv-viewer-2', 'models/platforms/SunglassesKhronos.glb');
+    SceneView.modelViewer('sv-viewer-3', 'models/platforms/MosquitoInAmber.glb');
+    SceneView.modelViewer('sv-viewer-4', 'models/platforms/CarConcept.glb');
+    SceneView.modelViewer('sv-viewer-5', 'models/platforms/GameBoyClassic.glb');
+</script>
+<script src="script.js"></script>
+</body>
+</html>

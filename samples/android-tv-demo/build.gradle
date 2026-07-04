@@ -1,0 +1,67 @@
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.compose.compiler)
+}
+
+android {
+    namespace = "io.github.sceneview.sample.tv"
+
+    compileSdk 36
+
+    defaultConfig {
+        applicationId "io.github.sceneview.sample.tv"
+        minSdk 28
+        targetSdk 36
+        versionCode 1
+        versionName "1.0.0"
+    }
+
+    buildTypes {
+        release {
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
+    }
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_21
+    }
+    buildFeatures {
+        compose = true
+    }
+    androidResources {
+        noCompress 'filamat', 'ktx'
+    }
+    // Asset folders: TV demo's own assets (src/main/assets) hold the TV-only
+    // models (nike_air_jordan, sheen_chair, etc.). The shared models +
+    // environments live in the phone demo's folder and are picked up at
+    // build time via sourceSets so the TV demo can reference them by their
+    // existing `models/...` paths without copying or symlinking. This split
+    // keeps the phone APK from carrying the TV-only models — see issue #879.
+    sourceSets.main.assets.srcDirs += '../android-demo/src/main/assets'
+    // Allow TvModelListTest to read src/main/assets/ from its test source set
+    // via a relative path (test working dir is this module's root).
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
+}
+
+dependencies {
+    // Compose BOM
+    implementation platform(libs.androidx.compose.bom)
+
+    implementation project(":samples:common")
+
+    // SceneView
+    implementation project(":sceneview")
+
+    // TV Compose (Leanback)
+    implementation libs.androidx.tv.foundation
+    implementation libs.androidx.tv.material
+
+    // Unit tests — verify every bundled model referenced by TvModelViewerActivity
+    // actually exists in src/main/assets/. Prevents regressing the session-34 fix.
+    testImplementation "junit:junit:4.13.2"
+}

@@ -1,0 +1,439 @@
+name: Deploy website + docs
+
+# This is the SINGLE workflow that publishes the user-facing site at
+# https://sceneview.github.io. It assembles ONE complete `site/` tree —
+# marketing landing page (root) + MkDocs technical docs (/docs/) +
+# static-site web-demo (/web-demo/) + Dokka API reference (/api/sceneview/) —
+# and pushes it to the external `sceneview/sceneview.github.io` repo.
+#
+# Why a single workflow: `deploy-website.yml` previously published ONLY
+# `website-static/` to the same external repo with `keep_files: true`,
+# while this workflow deployed the full `site/` to the *project* Pages of
+# `sceneview/sceneview` (a different host). The result was that
+# `sceneview.github.io/docs/` and `/api/` never received the MkDocs /
+# Dokka content — GitHub Pages' 404 fallback served the landing page
+# byte-for-byte for every unknown route (#925). `deploy-website.yml` is
+# now retired; this workflow is authoritative.
+
+on:
+  # Path-gated so a pure-code merge to main does NOT redeploy the
+  # website + docs (#1311, #1321). The repo runs a continuous
+  # high-merge-rate cycle — a Pages rebuild only adds value when
+  # documentation or website content actually changes.
+  #   - `**/*.md` covers CHANGELOG.md / MIGRATION.md / CONTRIBUTING.md
+  #     (synced into the MkDocs site) plus marketing/codelabs/*.md.
+  #   - the workflow file itself is listed so changes to the deploy
+  #     logic re-run it.
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'website-static/**'
+      - 'llms.txt'
+      - '**/*.md'
+      - '.github/workflows/docs.yml'
+  release:
+    types: [published]
+  workflow_call:
+  workflow_dispatch:
+
+# Dedup concurrent deployments per ref. The group MUST be ref-scoped: on a
+# release tag this workflow fires twice for the SAME ref (the `push: paths`
+# trigger AND `release: types:[published]`). A plain `group: pages` would put
+# both in one bucket and `cancel-in-progress: true` would cancel the first run
+# mid-deploy → partial-publish risk. Scoping by `github.ref` keeps the
+# legitimate same-ref dedup (two pushes to main still collapse) while letting a
+# tag run and a main run proceed independently.
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build website + docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      # ── 1. Copy static website (marketing site — root) ─────────────────
+      - name: Assemble site root from static HTML
+        run: |
+          mkdir -p site
+
+          # Static HTML/CSS/JS landing page.
+          #
+          # `cp -r website-static/.` (trailing dot) — NOT `website-static/*`.
+          # The `*` glob is expanded by the shell BEFORE `cp` runs and does
+          # NOT match dot-prefixed entries, so it silently skipped the
+          # `.well-known/` directory. The result: `assetlinks.json` and
+          # `apple-app-site-association` never reached the deployed site and
+          # both returned HTTP 404, breaking Android App Links / iOS
+          # Universal Links auto-verification (#1998). The `/.` form copies
+          # the directory contents verbatim, dotfiles included.
+          cp -r website-static/. site/
+
+          # Defensive: `site/docs/` is owned exclusively by the MkDocs
+          # build (step 2). `website-static/` must not pre-seed it — a
+          # legacy `website-static/docs/index.html` redirect stub used to
+          # do exactly that and shadow the real docs (#925). The stub has
+          # been removed from source; this guards against it returning.
+          rm -rf site/docs
+
+          # Defensive: `site/llms.txt` must be the canonical root `llms.txt`
+          # copied in step 3, NOT a stale `website-static/llms.txt`. A copy
+          # of `llms.txt` under `website-static/` used to drift 12 versions
+          # behind and shadow the root file via the `[ ! -f site/llms.txt ]`
+          # guard in step 3 (#1956). The stale copy has been removed from
+          # source; this guards against it returning. (`llms-full.txt` is
+          # NOT removed here — `website-static/llms-full.txt` is a real,
+          # version-synced file with no canonical root counterpart.)
+          rm -f site/llms.txt
+
+          # `.well-known/` ships only the two verified deep-link manifests
+          # (`assetlinks.json` + `apple-app-site-association`). The
+          # `README.md` and `llms.txt` that sit alongside them in source
+          # are repo-internal docs — drop them so they are not published
+          # under the live `/.well-known/` route (#1998).
+          rm -f site/.well-known/README.md site/.well-known/llms.txt
+
+          # `.nojekyll` disables GitHub Pages' Jekyll build on the
+          # deployed `sceneview.github.io` repo. Without it, Jekyll
+          # excludes dot-prefixed files/directories from its output, so
+          # even a correctly copied `.well-known/` would be dropped at
+          # build time and 404 (#1998).
+          touch site/.nojekyll
+
+      # ── 2. Build MkDocs (technical docs — /docs/) ───────────────────────
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Install MkDocs
+        run: |
+          # Deps live in requirements files so Dependabot can track/bump them (#1286).
+          pip install -r .github/workflows/requirements/docs.txt
+          # mkdocs-material[imaging] enables social card previews (optional, needs Cairo)
+          pip install -r .github/workflows/requirements/docs-imaging.txt 2>/dev/null || true
+
+      - name: Sync content into docs
+        run: |
+          if [ -d marketing/codelabs ]; then
+            mkdir -p docs/docs/codelabs
+            cp marketing/codelabs/codelab-3d-compose.md docs/docs/codelabs/codelab-3d-compose.md 2>/dev/null || true
+            cp marketing/codelabs/codelab-ar-compose.md docs/docs/codelabs/codelab-ar-compose.md 2>/dev/null || true
+          fi
+          cp MIGRATION.md docs/docs/migration.md 2>/dev/null || true
+          cp CHANGELOG.md docs/docs/changelog.md 2>/dev/null || true
+          cp CONTRIBUTING.md docs/docs/contributing.md 2>/dev/null || true
+
+      # Mirror root `llms.txt` into `docs/docs/llms.txt` so mkdocs serves the
+      # same AI-first API reference at `/docs/llms.txt` (issue #899). The
+      # mirror is NOT committed — it is `.gitignore`d and regenerated here on
+      # every docs build, so it is fresh-by-construction and can never drift
+      # from root `llms.txt`. Committing the copy meant a PR touching root
+      # `llms.txt` repeatedly forgot the mirror and turned the quality gate
+      # red (#1822 → #1847). This step MUST run before `mkdocs build` below,
+      # which copies `docs/docs/` static files into the published site.
+      - name: Mirror root llms.txt into docs
+        run: |
+          if [ -f llms.txt ]; then
+            cp llms.txt docs/docs/llms.txt
+            echo "Mirrored root llms.txt -> docs/docs/llms.txt ($(wc -c < docs/docs/llms.txt) bytes)."
+          else
+            echo "::error::root llms.txt missing — docs/docs/llms.txt cannot be generated"
+            exit 1
+          fi
+
+      - name: Build MkDocs
+        run: |
+          cd docs
+          mkdocs build --site-dir ../site/docs
+
+      # ── 3. Copy extra files ─────────────────────────────────────────────
+      - name: Copy SEO and meta files
+        run: |
+          # Copy SEO files from docs if not in website-static
+          for f in CNAME llms.txt llms-full.txt; do
+            [ ! -f "site/$f" ] && [ -f "docs/docs/$f" ] && cp "docs/docs/$f" "site/$f" || true
+          done
+          # Root llms.txt
+          [ ! -f "site/llms.txt" ] && [ -f "llms.txt" ] && cp llms.txt site/ || true
+
+      # ── 3b. Publish samples/web-demo to /web-demo/ ──────────────────────
+      - name: Copy samples/web-demo static site
+        run: |
+          # samples/web-demo is a plain static site — HTML + an inline
+          # <script> + a self-hosted sceneview.js, with self-hosted
+          # filament.js/.wasm, models and audio. The dead Kotlin/JS source
+          # set (which built a `web-model-viewer.js` bundle index.html never
+          # loaded) was removed in #1946, so there is nothing to compile:
+          # the files under `samples/web-demo/site/` ARE the deliverable.
+          # Copy them verbatim to the deployed `/web-demo/` route.
+          mkdir -p site/web-demo
+          cp -r samples/web-demo/site/. site/web-demo/
+          [ -f site/web-demo/index.html ] || {
+            echo "::error::site/web-demo/index.html missing — deploy would 404"; exit 1; }
+
+      # ── 4. Include Dokka API docs ───────────────────────────────────────
+      # Dokka is built and published by release.yml in its own gh-pages
+      # deploy. `download-artifact` only resolves artifacts from the SAME
+      # run, so this lookup never finds a cross-run `dokka-api-docs`
+      # artifact — release.yml no longer uploads one. It is kept solely to
+      # cover a hypothetical in-run Dokka build; in practice it always
+      # falls through to the `Preserve` step below, which carries the
+      # already-published `/api/` tree forward. See #1500.
+      - name: Download Dokka API docs (if available)
+        id: dokka
+        uses: actions/download-artifact@v7
+        with:
+          name: dokka-api-docs
+          path: site/api/sceneview
+        continue-on-error: true
+
+      # The deploy step replaces the published tree wholesale
+      # (`keep_files: false`). If this run has no fresh Dokka artifact we
+      # must carry over the API docs already live on sceneview.github.io,
+      # otherwise a docs-only deploy would wipe `/api/` — the exact
+      # 404-class regression #925 is about.
+      - name: Preserve already-published Dokka API docs
+        if: steps.dokka.outcome != 'success'
+        run: |
+          if find site/api/sceneview -mindepth 1 -print -quit 2>/dev/null | grep -q .; then
+            echo "Dokka artifact present — nothing to preserve."
+            exit 0
+          fi
+          echo "No fresh Dokka artifact; pulling /api/ from the live site."
+          tmp="$(mktemp -d)"
+          if git clone --depth 1 --branch main \
+              https://github.com/sceneview/sceneview.github.io.git "$tmp" 2>/dev/null \
+              && [ -d "$tmp/api" ]; then
+            rm -rf site/api
+            cp -r "$tmp/api" site/api
+            echo "Carried over existing /api/ from sceneview.github.io."
+          else
+            echo "::warning::Could not fetch existing /api/; this deploy will not include API docs."
+          fi
+          rm -rf "$tmp"
+
+      # ── 5. Verify the assembled tree ────────────────────────────────────
+      - name: Verify build
+        run: |
+          FILE_COUNT=$(find site -type f | wc -l)
+          echo "Site contains $FILE_COUNT files"
+          echo "Root files: $(ls site/)"
+          if [ "$FILE_COUNT" -lt 10 ]; then
+            echo "::error::Site build produced fewer than 10 files. Aborting."
+            exit 1
+          fi
+          # The landing page must own the root. The MkDocs docs site and
+          # the web-demo must own their own sub-paths with their own
+          # index.html — otherwise GitHub Pages' 404 fallback serves the
+          # landing page byte-for-byte for those routes (#925).
+          fail=0
+          for path in index.html docs/index.html web-demo/index.html; do
+            if [ -f "site/$path" ]; then
+              echo "OK   site/$path"
+            else
+              echo "::error::Missing site/$path — that route would 404 / fall back to the landing page (#925)"
+              fail=1
+            fi
+          done
+          # Dokka API docs are downloaded from a separate artifact and may
+          # legitimately be absent on a docs-only run — warn, don't fail.
+          if [ -f site/api/sceneview/index.html ]; then
+            echo "OK   site/api/sceneview/index.html"
+          else
+            echo "::warning::site/api/sceneview/index.html missing — Dokka artifact was not available for this run; /api/sceneview/ will 404 until a release run publishes it"
+          fi
+          # The verified deep-link manifests MUST be present, or Android
+          # App Links / iOS Universal Links auto-verification breaks
+          # silently — the regression #1998 fixed (the `cp website-static/*`
+          # glob dropped the dot-prefixed `.well-known/` directory).
+          for path in .well-known/assetlinks.json .well-known/apple-app-site-association; do
+            if [ -f "site/$path" ]; then
+              echo "OK   site/$path"
+            else
+              echo "::error::Missing site/$path — deep-link verification would 404 (#1998)"
+              fail=1
+            fi
+          done
+          # `.nojekyll` keeps GitHub Pages from stripping `.well-known/`.
+          if [ -f site/.nojekyll ]; then
+            echo "OK   site/.nojekyll"
+          else
+            echo "::error::Missing site/.nojekyll — Jekyll would drop dotfiles incl. /.well-known/ (#1998)"
+            fail=1
+          fi
+          [ "$fail" -eq 0 ] || exit 1
+
+      - name: Upload assembled site artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: sceneview-site
+          path: site
+          retention-days: 1
+          # Include dot-prefixed directories (e.g. `.well-known/`) in the
+          # artifact. By default upload-artifact@v4+ uses @actions/glob which
+          # excludes hidden files/dirs, so `.well-known/assetlinks.json` and
+          # `apple-app-site-association` would be silently stripped from the
+          # archive — causing the DEPLOY job's patch step to error with
+          # "site/.well-known/assetlinks.json missing" (#2155).
+          include-hidden-files: true
+
+  deploy:
+    name: Deploy to sceneview.github.io
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Cross-workflow serialisation (#1417). Both this job and release.yml's
+    # `publish-api-docs` job push to the external `sceneview/sceneview.github.io`
+    # repo. On a release tag both workflows fire at once and the second push is
+    # rejected (non-fast-forward) → `failed to push some refs`. A job-level
+    # `concurrency` group is shared ACROSS workflows when the group name
+    # matches, so naming both deploy jobs identically forces them to run one at
+    # a time. `cancel-in-progress: false` — never cancel an in-flight site
+    # deploy; queue behind it.
+    concurrency:
+      group: sceneview-github-io-deploy
+      cancel-in-progress: false
+    steps:
+      - name: Download assembled site artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: sceneview-site
+          path: site
+
+      # Publish the COMPLETE assembled tree (landing page + /docs/ +
+      # /web-demo/ + /api/sceneview/) to the user-facing repo. This is the
+      # only deploy that reaches https://sceneview.github.io.
+      #
+      # The `site/` tree is complete: the build job's "Download Dokka API
+      # docs" step already placed the API reference under `site/api/`
+      # before uploading the `sceneview-site` artifact.
+      #
+      # `keep_files: false` — the assembled `site/` IS the full intended
+      # tree, so a clean replace prevents stale files (e.g. the old
+      # redirect stub at `docs/index.html`) from lingering on the
+      # published branch and shadowing the new content.
+      - name: Deploy to sceneview/sceneview.github.io
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          deploy_key: ${{ secrets.PAGES_DEPLOY_KEY }}
+          external_repository: sceneview/sceneview.github.io
+          publish_branch: main
+          publish_dir: ./site
+          keep_files: false
+          commit_message: "deploy: ${{ github.event.head_commit.message || github.sha }}"
+          user_name: github-actions[bot]
+          user_email: github-actions[bot]@users.noreply.github.com
+
+      # `peaceiris/actions-gh-pages` internally uses `shelljs cp` with the
+      # glob pattern `${publishDir}/.*`, which (under Node.js/shelljs) does NOT
+      # expand to dot-prefixed subdirectories like `.well-known/` — only plain
+      # dotfiles (`.nojekyll`, `.gitignore`, …) survive. The result: every
+      # docs deploy was silently dropping `.well-known/assetlinks.json` and
+      # `.well-known/apple-app-site-association` from the live site, causing
+      # Android App Links and iOS Universal Links auto-verification to return
+      # HTTP 404 (#2155). Fix: after the peaceiris push, clone the deployed
+      # repo via the same SSH deploy key and add the missing directory in a
+      # follow-up commit. The peaceiris push lands first (full site replace),
+      # then this step adds what it missed.
+      - name: Patch .well-known/ into deployed repo (peaceiris cp drops dotdirs)
+        env:
+          PAGES_DEPLOY_KEY: ${{ secrets.PAGES_DEPLOY_KEY }}
+        run: |
+          # Write the SSH deploy key and configure git to use it.
+          mkdir -p ~/.ssh
+          echo "$PAGES_DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no"
+
+          # Clone the deployed repo (shallow — we only need HEAD).
+          git clone --depth=1 --branch main \
+            git@github.com:sceneview/sceneview.github.io.git \
+            /tmp/sceneview-pages
+
+          # Verify our source .well-known/ is present and non-empty.
+          if [ ! -f "site/.well-known/assetlinks.json" ]; then
+            echo "::error::site/.well-known/assetlinks.json missing — build artifact is broken."
+            exit 1
+          fi
+
+          # Overwrite .well-known/ in the cloned repo.
+          rm -rf /tmp/sceneview-pages/.well-known
+          cp -r site/.well-known /tmp/sceneview-pages/.well-known
+
+          cd /tmp/sceneview-pages
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Only commit if something actually changed (first deploy has no
+          # .well-known at all; subsequent deploys overwrite with fresh content).
+          if git diff --quiet && git diff --cached --quiet; then
+            # No staged changes yet — stage and re-check.
+            git add .well-known/
+          fi
+          git add .well-known/
+          if git diff --cached --quiet; then
+            echo ".well-known/ is already up-to-date in deployed repo — no patch needed."
+          else
+            git commit -m "deploy: patch .well-known/ (peaceiris cp drops dotdirs, #2155)"
+            git push origin main
+            echo ".well-known/ patched and pushed."
+          fi
+
+          # Clean up key.
+          rm -f ~/.ssh/deploy_key
+
+      # GitHub Pages' legacy auto-build on `sceneview/sceneview.github.io`
+      # does NOT fire for the push above. The deploy uses an SSH deploy key
+      # (`github-actions[bot]`), and GitHub deliberately skips the legacy
+      # Pages build for bot / deploy-key pushes to avoid recursive
+      # automation. The result: every `docs.yml` deploy lands new commits on
+      # `sceneview.github.io` but the live site is never rebuilt, so it
+      # silently drifts (#1826 — 13 days stuck on softwareVersion 4.0.9).
+      #
+      # Fix: force a build via the Pages REST API after every deploy.
+      #
+      # Auth: a PAT with `repo` scope. `PERSONAL_TOKEN` already exists as a
+      # repo secret (used for cross-repo automation) and is the default;
+      # `PAGES_REBUILD_TOKEN` is honoured first if a dedicated token is
+      # ever provisioned. NOTE: the `secrets` context is NOT allowed in a
+      # step `if:` expression — referencing it there makes the whole
+      # workflow file invalid ("Unrecognized named-value: 'secrets'"). The
+      # token presence check is done inside the `run:` script via
+      # `$PAGES_TOKEN` instead.
+      - name: Trigger GitHub Pages build (legacy auto-build skips bot pushes)
+        env:
+          PAGES_TOKEN: ${{ secrets.PAGES_REBUILD_TOKEN || secrets.PERSONAL_TOKEN }}
+        run: |
+          if [ -z "$PAGES_TOKEN" ]; then
+            echo "::warning::No Pages rebuild token configured — skipping."
+            exit 0
+          fi
+          echo "Requesting a GitHub Pages build for sceneview/sceneview.github.io..."
+          HTTP=$(curl -sS -o /tmp/pages-build.json -w '%{http_code}' -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $PAGES_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/sceneview/sceneview.github.io/pages/builds)
+          echo "Pages build request HTTP $HTTP"
+          head -c 400 /tmp/pages-build.json || true
+          echo
+          # 201 Created is the success status for a queued build request.
+          if [ "$HTTP" != "201" ]; then
+            # NON-fatal (#2014): the deploy above already pushed the new site
+            # content — a failed Pages-REBUILD trigger must not red-light the
+            # docs workflow. A dead/expired PAGES_REBUILD_TOKEN PAT surfaces
+            # as a loud warning; renew the secret per #2014 to restore the
+            # auto-rebuild (HTTP 401 = bad credentials).
+            echo "::warning::Pages build request failed (HTTP $HTTP) — see #1826/#2014."
+            echo "::warning::Deploy is unaffected; sceneview.github.io may show stale"
+            echo "::warning::content until PAGES_REBUILD_TOKEN is renewed ('pages:write')."
+            exit 0
+          fi
+          echo "Pages build queued — sceneview.github.io will rebuild shortly."

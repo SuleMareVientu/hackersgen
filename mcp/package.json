@@ -1,0 +1,96 @@
+{
+  "name": "sceneview-mcp",
+  "version": "4.0.13",
+  "mcpName": "io.github.sceneview/mcp",
+  "description": "MCP server for SceneView — cross-platform 3D & AR SDK for Android and iOS. Give Claude the full SceneView SDK so it writes correct, compilable code.",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "sceneview",
+    "android",
+    "ios",
+    "ar",
+    "arcore",
+    "arkit",
+    "3d",
+    "filament",
+    "realitykit",
+    "jetpack-compose",
+    "swiftui",
+    "kotlin-multiplatform",
+    "claude",
+    "ai"
+  ],
+  "license": "MIT",
+  "author": "SceneView (https://github.com/sceneview)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sceneview/sceneview.git",
+    "directory": "mcp"
+  },
+  "homepage": "https://github.com/sceneview/sceneview/tree/main/mcp#readme",
+  "bugs": {
+    "url": "https://github.com/sceneview/sceneview/issues"
+  },
+  "type": "module",
+  "bin": {
+    "sceneview-mcp": "dist/index.js"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "latest"
+  },
+  "files": [
+    "dist/**/*.js",
+    "!dist/**/*.test.js",
+    "!dist/**/__fixtures__/**",
+    "!dist/auth.js",
+    "!dist/billing.js",
+    "!dist/convert-platform.js",
+    "!dist/optimize-scene.js",
+    "!dist/explain-api.js",
+    "!dist/generate-animation.js",
+    "!dist/generate-environment.js",
+    "!dist/generate-gesture.js",
+    "!dist/generate-physics.js",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "prebuild": "node scripts/generate-llms-txt.js && node scripts/generate-version.js",
+    "build": "tsc",
+    "prepare": "node scripts/generate-llms-txt.js && node scripts/generate-version.js && tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "test": "node scripts/generate-llms-txt.js && node scripts/generate-version.js && vitest run",
+    "biome": "cd .. && mcp/node_modules/.bin/biome check",
+    "biome:fix": "cd .. && mcp/node_modules/.bin/biome check --write"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.0.0",
+    "@types/node": "^26.0.1",
+    "tsx": "^4.0.0",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.5"
+  },
+  "overrides": {
+    "picomatch": ">=4.0.4",
+    "hono": "^4.12.25",
+    "esbuild": "^0.28.1"
+  },
+  "funding": [
+    {
+      "type": "github",
+      "url": "https://github.com/sponsors/sceneview"
+    },
+    {
+      "type": "individual",
+      "url": "https://github.com/sponsors/sceneview"
+    }
+  ]
+}
