@@ -188,7 +188,7 @@ jobs:
       # already-published `/api/` tree forward. See #1500.
       - name: Download Dokka API docs (if available)
         id: dokka
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: dokka-api-docs
           path: site/api/sceneview
@@ -302,7 +302,7 @@ jobs:
       cancel-in-progress: false
     steps:
       - name: Download assembled site artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: sceneview-site
           path: site

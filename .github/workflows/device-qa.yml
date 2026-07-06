@@ -209,7 +209,7 @@ jobs:
           node-version: 20
 
       - name: Download prebuilt android-demo APK
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: android-demo-debug-apk
           # qa-android-demos.sh / device-qa.sh look for the APK here and skip
@@ -314,7 +314,7 @@ jobs:
       - uses: ./.github/actions/setup-gradle
 
       - name: Download prebuilt android-demo APK
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: android-demo-debug-apk
           # The AR replay leg reuses the same demo APK — restore it into the
