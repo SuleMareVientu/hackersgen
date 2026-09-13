@@ -8,6 +8,8 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import io.github.sceneview.demo.demos.SplatCapturePipeline
 import kotlinx.coroutines.CoroutineScope
@@ -19,18 +21,42 @@ import kotlinx.coroutines.withContext
 class SplatProcessService : Service() {
     companion object {
         const val ACTION_START_PROCESSING = "io.github.sceneview.demo.service.START_PROCESSING"
+        private const val TAG = "SplatProcessService"
     }
 
     private val CHANNEL_ID = "SplatProcessChannel"
     private val NOTIFICATION_ID = 1
     private var job: kotlinx.coroutines.Job? = null
+    private var thermalListener: PowerManager.OnThermalStatusChangedListener? = null
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
+            thermalListener = PowerManager.OnThermalStatusChangedListener { status ->
+                if (status >= PowerManager.THERMAL_STATUS_SEVERE) {
+                    Log.w(TAG, "Thermal status escalated: $status. Throttling/shedding load (§4).")
+                }
+            }
+            try {
+                thermalListener?.let { powerManager?.addThermalStatusListener(it) }
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not register thermal status listener: ${e.message}")
+            }
+        }
     }
 
     override fun onDestroy() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            thermalListener?.let {
+                val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
+                try {
+                    powerManager?.removeThermalStatusListener(it)
+                } catch (e: Exception) {}
+            }
+        }
         job?.cancel()
         super.onDestroy()
     }

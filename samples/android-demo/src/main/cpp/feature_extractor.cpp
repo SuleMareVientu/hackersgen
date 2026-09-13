@@ -142,7 +142,7 @@ std::vector<Keypoint> FeatureExtractor::extractFeatures(const cv::Mat& image) {
         
         int H_feat = 60;
         int W_feat = 80;
-        float threshold = 0.1f;
+        float threshold = 0.04f;
         
         std::vector<Keypoint> local_kpts;
         
@@ -198,7 +198,7 @@ std::vector<Keypoint> FeatureExtractor::extractFeatures(const cv::Mat& image) {
             return a.response > b.response;
         });
         
-        float nms_dist_sq = 4.0f * 4.0f;
+        float nms_dist_sq = 2.5f * 2.5f;
         std::vector<bool> keep(local_kpts.size(), true);
         for (size_t i = 0; i < local_kpts.size(); ++i) {
             if (!keep[i]) continue;
@@ -215,16 +215,47 @@ std::vector<Keypoint> FeatureExtractor::extractFeatures(const cv::Mat& image) {
         }
     } // End of tiles loop
     
-    // Sort globally by response
-    std::sort(global_keypoints.begin(), global_keypoints.end(), [](const Keypoint& a, const Keypoint& b) {
+    // Grid-enforced retention (§3.2): 16x12 grid, keep top-k points per cell
+    const int GRID_COLS = 16;
+    const int GRID_ROWS = 12;
+    const size_t MAX_KPTS_PER_CELL = 45; // 192 cells * 45 = up to ~8640 points
+
+    std::vector<Keypoint> cell_grid[GRID_ROWS][GRID_COLS];
+    float cell_w = static_cast<float>(img_w) / GRID_COLS;
+    float cell_h = static_cast<float>(img_h) / GRID_ROWS;
+
+    for (const auto& kp : global_keypoints) {
+        int col = std::min(GRID_COLS - 1, std::max(0, static_cast<int>(kp.pt.x / cell_w)));
+        int row = std::min(GRID_ROWS - 1, std::max(0, static_cast<int>(kp.pt.y / cell_h)));
+        cell_grid[row][col].push_back(kp);
+    }
+
+    std::vector<Keypoint> retained_keypoints;
+    retained_keypoints.reserve(global_keypoints.size());
+
+    for (int r = 0; r < GRID_ROWS; ++r) {
+        for (int c = 0; c < GRID_COLS; ++c) {
+            auto& cell_kpts = cell_grid[r][c];
+            if (cell_kpts.empty()) continue;
+
+            std::sort(cell_kpts.begin(), cell_kpts.end(), [](const Keypoint& a, const Keypoint& b) {
+                return a.response > b.response;
+            });
+
+            if (cell_kpts.size() > MAX_KPTS_PER_CELL) {
+                cell_kpts.resize(MAX_KPTS_PER_CELL);
+            }
+
+            retained_keypoints.insert(retained_keypoints.end(), cell_kpts.begin(), cell_kpts.end());
+        }
+    }
+
+    // Sort final retained keypoints by response
+    std::sort(retained_keypoints.begin(), retained_keypoints.end(), [](const Keypoint& a, const Keypoint& b) {
         return a.response > b.response;
     });
-    
-    // Cap at 4096 keypoints total (standard for SfM pipelines)
-    if (global_keypoints.size() > 4096) {
-        global_keypoints.resize(4096);
-    }
-    
-    LOGI("Extracted %zu keypoints from frame", global_keypoints.size());
-    return global_keypoints;
+
+    LOGI("Extracted %zu raw keypoints, retained %zu keypoints across %dx%d grid", 
+         global_keypoints.size(), retained_keypoints.size(), GRID_COLS, GRID_ROWS);
+    return retained_keypoints;
 }

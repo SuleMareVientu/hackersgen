@@ -4,6 +4,7 @@ project(splat_capture_jni CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,max-page-size=16384")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,max-page-size=16384")
 
 # Enable Neon optimizations for ARM architectures
 if(ANDROID_ABI MATCHES "^(arm64-v8a|armeabi-v7a)$")
@@ -84,6 +85,8 @@ add_library(splat_capture_jni SHARED
     feature_matcher.cpp
     triangulator.cpp
     bundle_adjuster.cpp
+    dense_tracker.cpp
+    point_cloud_filter.cpp
     exporter.cpp
 )
 
@@ -102,3 +105,10 @@ target_link_libraries(splat_capture_jni
     android
     log
 )
+
+option(BUILD_TESTS "Build regression tests" OFF)
+if(BUILD_TESTS)
+    add_executable(splat_capture_tests tests.cpp)
+    target_include_directories(splat_capture_tests PRIVATE ${OpenCV_INCLUDE_DIRS})
+    target_link_libraries(splat_capture_tests ${OpenCV_LIBS})
+endif()

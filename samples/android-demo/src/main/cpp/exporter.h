@@ -23,7 +23,8 @@ public:
         const std::vector<std::string>& image_names,
         const std::vector<CameraPose>& poses,
         const std::vector<Track>& tracks,
-        const std::string& output_dir);
+        const std::string& output_dir,
+        bool binary = true);
 
 private:
     cv::Vec3b computeTrackColor(const Track& track, const std::vector<cv::Mat>& images);

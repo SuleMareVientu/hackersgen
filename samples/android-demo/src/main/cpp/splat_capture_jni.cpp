@@ -12,6 +12,8 @@
 #include "feature_matcher.h"
 #include "triangulator.h"
 #include "bundle_adjuster.h"
+#include "dense_tracker.h"
+#include "point_cloud_filter.h"
 #include "exporter.h"
 #include <fstream>
 #include <sstream>
@@ -31,6 +33,8 @@ public:
       matcher_ = std::make_unique<FeatureMatcher>();
       triangulator_ = std::make_unique<Triangulator>();
       bundle_adjuster_ = std::make_unique<BundleAdjuster>();
+      dense_tracker_ = std::make_unique<DenseTracker>();
+      point_cloud_filter_ = std::make_unique<PointCloudFilter>();
       exporter_ = std::make_unique<Exporter>();
   }
   
@@ -92,6 +96,11 @@ public:
           pose.h = h;
           pose.K = (cv::Mat_<float>(3, 3) << fx, 0, cx, 0, fy, cy, 0, 0, 1);
           
+          int rs_flag = 0;
+          if (ss2 >> rs_flag) {
+              pose.is_rolling_shutter = (rs_flag != 0);
+          }
+          
           poses.push_back(pose);
           
           cv::Mat img = cv::imread(img_path);
@@ -102,6 +111,7 @@ public:
       }
       
       LOGI("Loaded %zu frames", poses.size());
+      const std::vector<CameraPose> arcore_poses = poses;
       
       // Feature Extraction
       current_phase_ = 1;
@@ -153,6 +163,8 @@ public:
           
           // Parallel Matching
           std::vector<std::vector<FeatureMatch>> thread_matches(pairs.size());
+          std::vector<int> pair_raw_matches(pairs.size(), 0);
+          std::vector<int> pair_inliers(pairs.size(), 0);
           
           int num_threads = std::thread::hardware_concurrency();
           if (num_threads == 0) num_threads = 4;
@@ -166,7 +178,10 @@ public:
                       if (cancel_) return;
                       const auto& pair = pairs[i];
                       auto matches = matcher_->matchMNN(all_keypoints[pair.first], all_keypoints[pair.second]);
-                      thread_matches[i] = matcher_->filterEpipolar(matches, all_keypoints[pair.first], all_keypoints[pair.second], poses[pair.first], poses[pair.second]);
+                      auto inliers = matcher_->filterEpipolar(matches, all_keypoints[pair.first], all_keypoints[pair.second], poses[pair.first], poses[pair.second]);
+                      pair_raw_matches[i] = matches.size();
+                      pair_inliers[i] = inliers.size();
+                      thread_matches[i] = std::move(inliers);
                   }
               });
           }
@@ -184,6 +199,44 @@ public:
           
           auto t_match_end = std::chrono::steady_clock::now();
           LOGI("Phase 3 (Matching) took %lld ms", (long long)std::chrono::duration_cast<std::chrono::milliseconds>(t_match_end - t_match_start).count());
+
+          // Aggregate per-frame inlier ratio for drift detection (§3.5)
+          std::vector<int> cam_raw(poses.size(), 0);
+          std::vector<int> cam_inliers(poses.size(), 0);
+          for (size_t i = 0; i < pairs.size(); ++i) {
+              cam_raw[pairs[i].first] += pair_raw_matches[i];
+              cam_raw[pairs[i].second] += pair_raw_matches[i];
+              cam_inliers[pairs[i].first] += pair_inliers[i];
+              cam_inliers[pairs[i].second] += pair_inliers[i];
+          }
+
+          std::vector<float> cam_inlier_ratio(poses.size(), 1.0f);
+          std::vector<float> confidences(poses.size(), 1.0f);
+          bool drift_detected = false;
+          int best_ref_cam = 0;
+          float best_ratio = -1.0f;
+
+          for (size_t c = 0; c < poses.size(); ++c) {
+              if (cam_raw[c] > 0) {
+                  cam_inlier_ratio[c] = static_cast<float>(cam_inliers[c]) / cam_raw[c];
+              } else {
+                  cam_inlier_ratio[c] = 1.0f;
+              }
+              confidences[c] = cam_inlier_ratio[c];
+
+              // Rolling-shutter caveat (§3.5): exclude rolling shutter frames from drift decisions
+              if (!poses[c].is_rolling_shutter) {
+                  if (cam_inlier_ratio[c] > best_ratio) {
+                      best_ratio = cam_inlier_ratio[c];
+                      best_ref_cam = c;
+                  }
+                  if (cam_inlier_ratio[c] < 0.90f) {
+                      drift_detected = true;
+                  }
+              } else {
+                  LOGI("Frame %zu flagged as rolling-shutter risk; excluded from drift threshold decision", c);
+              }
+          }
           
           // Collect Tracks
           auto t_tri_start = std::chrono::steady_clock::now();
@@ -249,24 +302,48 @@ public:
           auto t_tri_end = std::chrono::steady_clock::now();
           LOGI("Phase 3 (Triangulation) took %lld ms", (long long)std::chrono::duration_cast<std::chrono::milliseconds>(t_tri_end - t_tri_start).count());
           
-          // Bundle Adjustment
+          // Bundle Adjustment (Structure-only refinement: lock camera poses as ARCore ground truth)
           current_phase_ = 4;
           auto t_ba_start = std::chrono::steady_clock::now();
-          bundle_adjuster_->optimize(poses, tracks, 20);
+          LOGI("Phase 4: Refining 3D points via Structure-Only BA (preserving ARCore ground-truth poses)...");
+          bundle_adjuster_->optimize(poses, tracks, best_ref_cam, confidences, 60, false);
           auto t_ba_end = std::chrono::steady_clock::now();
           LOGI("Phase 4 (BA) took %lld ms", (long long)std::chrono::duration_cast<std::chrono::milliseconds>(t_ba_end - t_ba_start).count());
-          
-      point_count_ = tracks.size();
-      
-      // Export
-      if (cancel_) return;
-      current_phase_ = 5;
-      auto t_export_start = std::chrono::steady_clock::now();
-      exporter_->exportNerfstudio(images, image_names, poses, tracks, output_dir);
-      auto t_export_end = std::chrono::steady_clock::now();
-      LOGI("Phase 5 (Export) took %lld ms", (long long)std::chrono::duration_cast<std::chrono::milliseconds>(t_export_end - t_export_start).count());
-      
-            current_phase_ = 6; // Complete
+          if (cancel_) return;
+
+       // Phase 5: Dense Guided Fill (§3.7)
+       current_phase_ = 5;
+       auto t_dense_start = std::chrono::steady_clock::now();
+       auto dense_candidates = dense_tracker_->trackAndTriangulate(images, arcore_poses, 1.2f, 3, 8);
+       auto t_dense_end = std::chrono::steady_clock::now();
+       LOGI("Phase 5 (Dense Guided Fill) took %lld ms (%zu candidates)",
+            (long long)std::chrono::duration_cast<std::chrono::milliseconds>(t_dense_end - t_dense_start).count(),
+            dense_candidates.size());
+
+       if (cancel_) return;
+
+       // Phase 6: Multi-View Consistency Filter & Fusion/Thinning (§3.8, §3.9)
+       current_phase_ = 6;
+       auto t_filter_start = std::chrono::steady_clock::now();
+       auto consistent_dense = point_cloud_filter_->filterConsistency(dense_candidates, arcore_poses, 2, 1.5f);
+       auto final_points = point_cloud_filter_->fuseAndFilter(tracks, consistent_dense, 0.0015f);
+       auto t_filter_end = std::chrono::steady_clock::now();
+       LOGI("Phase 6 (Consistency & Fusion) took %lld ms (%zu final points)",
+            (long long)std::chrono::duration_cast<std::chrono::milliseconds>(t_filter_end - t_filter_start).count(),
+            final_points.size());
+
+       point_count_ = final_points.size();
+
+       // Phase 7: Export (§3.10)
+       if (cancel_) return;
+       current_phase_ = 7;
+       auto t_export_start = std::chrono::steady_clock::now();
+       exporter_->exportNerfstudio(images, image_names, arcore_poses, final_points, output_dir, true);
+       auto t_export_end = std::chrono::steady_clock::now();
+       LOGI("Phase 7 (Export) took %lld ms",
+            (long long)std::chrono::duration_cast<std::chrono::milliseconds>(t_export_end - t_export_start).count());
+
+       current_phase_ = 8; // Complete
   }
 
   void Clear() { cancel_ = true; }
@@ -283,6 +360,8 @@ private:
   std::unique_ptr<FeatureMatcher> matcher_;
   std::unique_ptr<Triangulator> triangulator_;
   std::unique_ptr<BundleAdjuster> bundle_adjuster_;
+  std::unique_ptr<DenseTracker> dense_tracker_;
+  std::unique_ptr<PointCloudFilter> point_cloud_filter_;
   std::unique_ptr<Exporter> exporter_;
   std::atomic<int> point_count_{0};
   std::mutex process_mutex_;

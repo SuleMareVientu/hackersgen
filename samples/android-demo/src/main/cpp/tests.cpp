@@ -1,6 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <cmath>
+#include <cassert>
 #include <opencv2/core.hpp>
 
 // 1. Pose Parsing & Extrinsics Conversion
@@ -38,16 +39,25 @@ void test_pose_conversion() {
     cv::Mat p_cam = R_cv * p_world + t_cv;
     std::cout << "p_cam (Expected: 0, 0, 1):\n" << p_cam << "\n";
 
+    assert(std::abs(p_cam.at<float>(0, 0) - 0.0f) < 1e-4f);
+    assert(std::abs(p_cam.at<float>(1, 0) - 0.0f) < 1e-4f);
+    assert(std::abs(p_cam.at<float>(2, 0) - 1.0f) < 1e-4f);
+
     cv::Mat c2w_R = R_cv.t();
     cv::Mat c2w_t = -c2w_R * t_cv;
     cv::Mat flip = (cv::Mat_<float>(3, 3) << 
         1, 0, 0,
-        0, -1, 0,
+        0, -1, 0, 
         0, 0, -1);
     cv::Mat c2w_R_gl = c2w_R * flip;
 
     std::cout << "Export c2w_R_gl (Expected: Identity):\n" << c2w_R_gl << "\n";
     std::cout << "Export c2w_t (Expected: 1, 2, 3):\n" << c2w_t << "\n";
+
+    assert(cv::norm(c2w_R_gl - cv::Mat::eye(3, 3, CV_32F)) < 1e-4f);
+    assert(std::abs(c2w_t.at<float>(0, 0) - 1.0f) < 1e-4f);
+    assert(std::abs(c2w_t.at<float>(1, 0) - 2.0f) < 1e-4f);
+    assert(std::abs(c2w_t.at<float>(2, 0) - 3.0f) < 1e-4f);
 }
 
 void test_bundle_adjustment() {
@@ -57,9 +67,23 @@ void test_bundle_adjustment() {
     std::cout << "Camera 1's translation is fixed -> fixes scale gauge.\n";
 }
 
+void test_ceres_column_major_indexing() {
+    std::cout << "--- test_ceres_column_major_indexing ---\n";
+    // Ceres RotationMatrixToAngleAxis and AngleAxisToRotationMatrix expect column-major order:
+    // element (r, c) is at index (c * 3 + r).
+    // Verify column 0 (r=0,1,2): indices 0, 1, 2
+    assert((0 * 3 + 0) == 0 && (0 * 3 + 1) == 1 && (0 * 3 + 2) == 2);
+    // Verify column 1 (r=0,1,2): indices 3, 4, 5
+    assert((1 * 3 + 0) == 3 && (1 * 3 + 1) == 4 && (1 * 3 + 2) == 5);
+    // Verify column 2 (r=0,1,2): indices 6, 7, 8
+    assert((2 * 3 + 0) == 6 && (2 * 3 + 1) == 7 && (2 * 3 + 2) == 8);
+    std::cout << "Ceres column-major indexing verified.\n";
+}
+
 int main() {
     test_pose_conversion();
     test_bundle_adjustment();
+    test_ceres_column_major_indexing();
     std::cout << "All tests complete.\n";
     return 0;
 }

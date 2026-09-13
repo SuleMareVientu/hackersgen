@@ -1,5 +1,7 @@
 #include "match_culling.h"
 #include <android/log.h>
+#include <set>
+#include <algorithm>
 
 #define LOG_TAG "MatchCuller"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -29,31 +31,49 @@ float MatchCuller::computeLookVectorDot(const CameraPose& a, const CameraPose& b
 }
 
 std::vector<std::pair<int, int>> MatchCuller::getValidPairs(const std::vector<CameraPose>& poses) {
-    std::vector<std::pair<int, int>> valid_pairs;
     int n = poses.size();
-    
+    if (n < 2) return {};
+
+    // For each frame, collect all viable candidates with an overlap quality score (§3.3)
+    struct Candidate {
+        int neighbor_idx;
+        float score;
+    };
+    std::vector<std::vector<Candidate>> frame_candidates(n);
+
     for (int i = 0; i < n; ++i) {
-        for (int j = i + 1; j < n; ++j) {
+        for (int j = 0; j < n; ++j) {
+            if (i == j) continue;
             float baseline = computeBaseline(poses[i], poses[j]);
             float look_dot = computeLookVectorDot(poses[i], poses[j]);
-            
-            if (baseline < min_baseline_) {
-                // Too close, insufficient parallax
+
+            if (baseline < min_baseline_ || baseline > max_baseline_ || look_dot < min_look_dot_) {
                 continue;
             }
-            if (baseline > max_baseline_) {
-                // Too far, unlikely to have good overlapping features
-                continue;
-            }
-            if (look_dot < min_look_dot_) {
-                // Cameras are not looking in the same general direction
-                continue;
-            }
-            
-            valid_pairs.push_back({i, j});
+
+            // Quality score: high viewing direction alignment weighted by moderate baseline
+            float score = look_dot / (1.0f + baseline);
+            frame_candidates[i].push_back({j, score});
         }
     }
-    
-    LOGI("Generated %zu valid pairs out of %d total possible pairs", valid_pairs.size(), (n * (n - 1)) / 2);
+
+    // Cap each frame's neighbors to max_neighbors_per_frame_ to enforce O(N) pair complexity
+    std::set<std::pair<int, int>> unique_pairs;
+    for (int i = 0; i < n; ++i) {
+        auto& cands = frame_candidates[i];
+        std::sort(cands.begin(), cands.end(), [](const Candidate& a, const Candidate& b) {
+            return a.score > b.score;
+        });
+
+        int limit = std::min(static_cast<int>(cands.size()), max_neighbors_per_frame_);
+        for (int k = 0; k < limit; ++k) {
+            int j = cands[k].neighbor_idx;
+            unique_pairs.insert({std::min(i, j), std::max(i, j)});
+        }
+    }
+
+    std::vector<std::pair<int, int>> valid_pairs(unique_pairs.begin(), unique_pairs.end());
+    LOGI("Generated %zu valid pairs (capped at %d neighbors/frame) out of %d total possible pairs",
+         valid_pairs.size(), max_neighbors_per_frame_, (n * (n - 1)) / 2);
     return valid_pairs;
 }

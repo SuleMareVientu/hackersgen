@@ -108,8 +108,34 @@ object SplatCapturePipeline {
     external fun getProcessingPhase(handle: Long): Int
 }
 
+data class CapturedFrameMetadata(
+    val imageFile: File,
+    val fx: Float,
+    val fy: Float,
+    val cx: Float,
+    val cy: Float,
+    val camW: Int,
+    val camH: Int,
+    val anchor: Anchor?,
+    val initialPoseMatrix: FloatArray,
+    val isRollingShutterRisk: Int
+)
+
 class CaptureContext {
     var lastPose: Pose? = null
+    var lastTimestampNs: Long = 0L
+    val capturedFrames = mutableListOf<CapturedFrameMetadata>()
+
+    fun clearAnchors() {
+        synchronized(capturedFrames) {
+            capturedFrames.forEach {
+                try {
+                    it.anchor?.detach()
+                } catch (_: Exception) {}
+            }
+            capturedFrames.clear()
+        }
+    }
 }
 
 private fun copyAssetToFile(context: Context, assetPath: String, outFile: File) {
@@ -155,6 +181,7 @@ fun ArSplatCaptureDemo(onBack: () -> Unit) {
     var gpuStatus by remember { mutableIntStateOf(0) }
     var processingPhase by remember { mutableIntStateOf(0) }
     var isExportReady by remember { mutableStateOf(false) }
+    val captureContext = remember { CaptureContext() }
 
     // Request Notification permission for Android 13+
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -222,6 +249,7 @@ fun ArSplatCaptureDemo(onBack: () -> Unit) {
                 SplatCapturePipeline.freePipeline(pipelineHandle)
                 pipelineHandle = 0L
             }
+            captureContext.clearAnchors()
         }
     }
 
@@ -263,7 +291,7 @@ fun ArSplatCaptureDemo(onBack: () -> Unit) {
                 gpuStatus = SplatCapturePipeline.getGpuStatus(pipelineHandle)
                 processingPhase = SplatCapturePipeline.getProcessingPhase(pipelineHandle)
                 
-                if (isGenerating && processingPhase == 6) {
+                if (isGenerating && processingPhase >= 8) {
                     isGenerating = false
                     isExportReady = true
                 }
@@ -277,8 +305,6 @@ fun ArSplatCaptureDemo(onBack: () -> Unit) {
             kotlinx.coroutines.delay(200)
         }
     }
-
-    val captureContext = remember { CaptureContext() }
 
     var lastW by remember { mutableIntStateOf(0) }
     var lastH by remember { mutableIntStateOf(0) }
@@ -304,7 +330,7 @@ fun ArSplatCaptureDemo(onBack: () -> Unit) {
         controls = {
             Text(
                 text = "Capture a dataset for Gaussian Splatting. Move the camera slowly around an object. " +
-                    "Frames are automatically captured when you move 10cm or rotate 15 degrees.",
+                    "Frames are automatically captured when you move 4cm or rotate 6 degrees.",
                 style = MaterialTheme.typography.bodyMedium
             )
 
@@ -375,6 +401,8 @@ fun ArSplatCaptureDemo(onBack: () -> Unit) {
                             displayFrameCount = 0
                             displayPointCount = 0
                             captureContext.lastPose = null
+                            captureContext.lastTimestampNs = 0L
+                            captureContext.clearAnchors()
                             tempDir.deleteRecursively()
                             tempDir.mkdirs()
                             File(tempDir, "images").mkdirs()
@@ -406,6 +434,8 @@ fun ArSplatCaptureDemo(onBack: () -> Unit) {
                                     displayPointCount = 0
                                     processingPhase = 0
                                     captureContext.lastPose = null
+                                    captureContext.lastTimestampNs = 0L
+                                    captureContext.clearAnchors()
                                     tempDir.deleteRecursively()
                                     tempDir.mkdirs()
                                     File(tempDir, "images").mkdirs()
@@ -470,8 +500,10 @@ fun ArSplatCaptureDemo(onBack: () -> Unit) {
                                     2 -> "Culling Matches..."
                                     3 -> "Matching & Triangulating..."
                                     4 -> "Bundle Adjustment..."
-                                    5 -> "Exporting..."
-                                    6 -> "Complete"
+                                    5 -> "Dense Optical Flow..."
+                                    6 -> "Consistency & Thinning..."
+                                    7 -> "Exporting..."
+                                    8 -> "Complete"
                                     else -> "Processing..."
                                 }
                                 Text(
@@ -495,6 +527,26 @@ fun ArSplatCaptureDemo(onBack: () -> Unit) {
                                         totalFramesToProcess = internalFrameCount.get()
                                         isCapturing = false
                                         processingPhase = 0
+
+                                        // Rewrite manifest.txt using loop-closed anchor poses from ARCore's spatial graph
+                                        val manifestFile = File(tempDir, "manifest.txt")
+                                        manifestFile.writeText("${tempDir.absolutePath}\n0\n")
+                                        synchronized(captureContext.capturedFrames) {
+                                            for (frameMeta in captureContext.capturedFrames) {
+                                                val poseMatrix = FloatArray(16)
+                                                val anchor = frameMeta.anchor
+                                                if (anchor != null && anchor.trackingState == TrackingState.TRACKING) {
+                                                    anchor.pose.toMatrix(poseMatrix, 0)
+                                                } else {
+                                                    System.arraycopy(frameMeta.initialPoseMatrix, 0, poseMatrix, 0, 16)
+                                                }
+                                                val poseStr = poseMatrix.joinToString(" ")
+                                                manifestFile.appendText(
+                                                    "${frameMeta.imageFile.absolutePath} ${frameMeta.fx} ${frameMeta.fy} ${frameMeta.cx} ${frameMeta.cy} ${frameMeta.camW} ${frameMeta.camH} $poseStr ${frameMeta.isRollingShutterRisk}\n"
+                                                )
+                                            }
+                                            captureContext.clearAnchors()
+                                        }
     
                                         val serviceIntent = android.content.Intent(context, io.github.sceneview.demo.service.SplatProcessService::class.java).apply {
                                             action = io.github.sceneview.demo.service.SplatProcessService.ACTION_START_PROCESSING
@@ -559,15 +611,33 @@ fun ArSplatCaptureDemo(onBack: () -> Unit) {
                             
                             val currentPose = frame.camera.pose
                             val lastPose = captureContext.lastPose
+                            val currentTimestampNs = frame.timestamp
                             
                             val shouldCapture = lastPose == null || run {
                                 val dist = distance(lastPose, currentPose)
                                 val angle = angleBetween(lastPose, currentPose)
-                                dist > 0.10f || angle > 15.0f
+                                dist > 0.04f || angle > 6.0f
                             }
                             
                             if (shouldCapture) {
+                                var isRollingShutterRisk = 0
+                                if (lastPose != null && captureContext.lastTimestampNs > 0L) {
+                                    val dtSec = (currentTimestampNs - captureContext.lastTimestampNs).toDouble() / 1e9
+                                    if (dtSec > 0.001) {
+                                        val angularVelocity = angleBetween(lastPose, currentPose) / dtSec
+                                        if (angularVelocity > 18.0) {
+                                            isRollingShutterRisk = 1
+                                        }
+                                    }
+                                }
                                 captureContext.lastPose = currentPose
+                                captureContext.lastTimestampNs = currentTimestampNs
+
+                                val anchor = try {
+                                    session.createAnchor(currentPose)
+                                } catch (e: Exception) {
+                                    null
+                                }
                                 
                                 var cameraImage: Image? = null
                                 
@@ -647,9 +717,26 @@ fun ArSplatCaptureDemo(onBack: () -> Unit) {
                                                 manifestFile.writeText("${tempDir.absolutePath}\n0\n")
                                             }
                                             
-                                            // Append frame info
+                                            // Append frame info including rolling shutter risk flag (§3.1)
                                             val poseStr = poseMatrix.joinToString(" ")
-                                            manifestFile.appendText("${imageFile.absolutePath} $fx $fy $cx $cy $camW $camH $poseStr\n")
+                                            manifestFile.appendText("${imageFile.absolutePath} $fx $fy $cx $cy $camW $camH $poseStr $isRollingShutterRisk\n")
+
+                                            synchronized(captureContext.capturedFrames) {
+                                                captureContext.capturedFrames.add(
+                                                    CapturedFrameMetadata(
+                                                        imageFile = imageFile,
+                                                        fx = fx,
+                                                        fy = fy,
+                                                        cx = cx,
+                                                        cy = cy,
+                                                        camW = camW,
+                                                        camH = camH,
+                                                        anchor = anchor,
+                                                        initialPoseMatrix = poseMatrix,
+                                                        isRollingShutterRisk = isRollingShutterRisk
+                                                    )
+                                                )
+                                            }
                                             
                                             internalFrameCount.incrementAndGet()
                                         } catch(e: Exception) {
@@ -718,6 +805,8 @@ fun ArSplatCaptureDemo(onBack: () -> Unit) {
                         displayPointCount = 0
                         processingPhase = 0
                         captureContext.lastPose = null
+                        captureContext.lastTimestampNs = 0L
+                        captureContext.clearAnchors()
                         tempDir.deleteRecursively()
                         tempDir.mkdirs()
                         File(tempDir, "images").mkdirs()

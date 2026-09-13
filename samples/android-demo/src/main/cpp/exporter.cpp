@@ -62,17 +62,15 @@ bool Exporter::exportNerfstudio(
     const std::vector<std::string>& image_names,
     const std::vector<CameraPose>& poses,
     const std::vector<Track>& tracks,
-    const std::string& output_dir) {
+    const std::string& output_dir,
+    bool binary) {
     
     if (poses.empty()) return false;
 
-    // 1. Export sparse.ply
-    std::string ply_path = output_dir + "/points.ply";
-    std::ofstream ply_file(ply_path);
-    if (!ply_file.is_open()) {
-        LOGE("Failed to open %s for writing", ply_path.c_str());
-        return false;
-    }
+    // 1. Export points.ply (primary for Nerfstudio/Brush) and points3D.ply (for COLMAP)
+    std::string ply_filename = "points.ply";
+    std::string ply_path = output_dir + "/" + ply_filename;
+    std::string colmap_ply_path = output_dir + "/points3D.ply";
 
     // Count valid points
     int num_valid_tracks = 0;
@@ -80,37 +78,115 @@ bool Exporter::exportNerfstudio(
         if (track.valid) num_valid_tracks++;
     }
 
-    ply_file << "ply\n";
-    ply_file << "format ascii 1.0\n";
-    ply_file << "element vertex " << num_valid_tracks << "\n";
-    ply_file << "property float x\n";
-    ply_file << "property float y\n";
-    ply_file << "property float z\n";
-    ply_file << "property uchar red\n";
-    ply_file << "property uchar green\n";
-    ply_file << "property uchar blue\n";
-    ply_file << "end_header\n";
+    if (binary) {
+        std::ofstream ply_file(ply_path, std::ios::binary);
+        if (!ply_file.is_open()) {
+            LOGE("Failed to open %s for writing", ply_path.c_str());
+            return false;
+        }
 
-    for (const auto& track : tracks) {
-        if (!track.valid) continue;
-        
-        cv::Vec3b color = computeTrackColor(track, images);
-        
-        // OpenCV is right-handed, Y down, Z forward. Nerfstudio usually expects OpenGL: Y up, Z backward.
-        // We flip Y and Z
-        float x = track.pt3d.x;
-        float y = track.pt3d.y;
-        float z = track.pt3d.z;
-        
-        // OpenCV color is BGR
-        int b = color[0];
-        int g = color[1];
-        int r = color[2];
+        std::string header = 
+            "ply\n"
+            "format binary_little_endian 1.0\n"
+            "element vertex " + std::to_string(num_valid_tracks) + "\n"
+            "property float x\n"
+            "property float y\n"
+            "property float z\n"
+            "property uchar red\n"
+            "property uchar green\n"
+            "property uchar blue\n"
+            "end_header\n";
+        ply_file.write(header.c_str(), header.size());
 
-        ply_file << x << " " << y << " " << z << " " 
-                 << r << " " << g << " " << b << "\n";
+#pragma pack(push, 1)
+        struct VertexBinary {
+            float x, y, z;
+            uint8_t red, green, blue;
+        };
+#pragma pack(pop)
+
+        std::vector<VertexBinary> buffer;
+        buffer.reserve(num_valid_tracks);
+
+        for (const auto& track : tracks) {
+            if (!track.valid) continue;
+            cv::Vec3b color = computeTrackColor(track, images);
+
+            VertexBinary v;
+            v.x = track.pt3d.x;
+            v.y = track.pt3d.y;
+            v.z = track.pt3d.z;
+            v.red = static_cast<uint8_t>(color[2]);   // OpenCV BGR -> R
+            v.green = static_cast<uint8_t>(color[1]); // G
+            v.blue = static_cast<uint8_t>(color[0]);  // B
+            buffer.push_back(v);
+        }
+
+        if (!buffer.empty()) {
+            ply_file.write(reinterpret_cast<const char*>(buffer.data()), buffer.size() * sizeof(VertexBinary));
+        }
+        ply_file.close();
+
+        // Also write points3D.ply duplicate
+        std::ofstream colmap_file(colmap_ply_path, std::ios::binary);
+        if (colmap_file.is_open()) {
+            colmap_file.write(header.c_str(), header.size());
+            if (!buffer.empty()) {
+                colmap_file.write(reinterpret_cast<const char*>(buffer.data()), buffer.size() * sizeof(VertexBinary));
+            }
+            colmap_file.close();
+        }
+    } else {
+        std::ofstream ply_file(ply_path);
+        if (!ply_file.is_open()) {
+            LOGE("Failed to open %s for writing", ply_path.c_str());
+            return false;
+        }
+
+        ply_file << "ply\n";
+        ply_file << "format ascii 1.0\n";
+        ply_file << "element vertex " << num_valid_tracks << "\n";
+        ply_file << "property float x\n";
+        ply_file << "property float y\n";
+        ply_file << "property float z\n";
+        ply_file << "property uchar red\n";
+        ply_file << "property uchar green\n";
+        ply_file << "property uchar blue\n";
+        ply_file << "end_header\n";
+
+        for (const auto& track : tracks) {
+            if (!track.valid) continue;
+            
+            cv::Vec3b color = computeTrackColor(track, images);
+            
+            float x = track.pt3d.x;
+            float y = track.pt3d.y;
+            float z = track.pt3d.z;
+            
+            int b = color[0];
+            int g = color[1];
+            int r = color[2];
+
+            ply_file << x << " " << y << " " << z << " " 
+                     << r << " " << g << " " << b << "\n";
+        }
+        ply_file.close();
+
+        // Also write points3D.ply duplicate
+        std::ofstream colmap_file(colmap_ply_path);
+        if (colmap_file.is_open()) {
+            colmap_file << "ply\nformat ascii 1.0\nelement vertex " << num_valid_tracks << "\n"
+                        << "property float x\nproperty float y\nproperty float z\n"
+                        << "property uchar red\nproperty uchar green\nproperty uchar blue\nend_header\n";
+            for (const auto& track : tracks) {
+                if (!track.valid) continue;
+                cv::Vec3b color = computeTrackColor(track, images);
+                colmap_file << track.pt3d.x << " " << track.pt3d.y << " " << track.pt3d.z << " " 
+                            << (int)color[2] << " " << (int)color[1] << " " << (int)color[0] << "\n";
+            }
+            colmap_file.close();
+        }
     }
-    ply_file.close();
 
     // 2. Export transforms.json
     std::string json_path = output_dir + "/transforms.json";
@@ -122,7 +198,7 @@ bool Exporter::exportNerfstudio(
 
     json_file << "{\n";
     json_file << "  \"camera_model\": \"PERSPECTIVE\",\n";
-    json_file << "  \"ply_file_path\": \"points.ply\",\n";
+    json_file << "  \"ply_file_path\": \"" << ply_filename << "\",\n";
     json_file << "  \"frames\": [\n";
 
     for (size_t i = 0; i < poses.size(); ++i) {
