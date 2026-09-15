@@ -28,5 +28,9 @@ private:
     cv::Mat computeFundamentalMatrix(const CameraPose& pose_a, const CameraPose& pose_b);
     cv::Vec3f computeEpipolarLine(const cv::Point2f& pt, const cv::Mat& F);
     cv::Point2f projectToEpipolarLine(const cv::Point2f& pt, const cv::Vec3f& line);
-    bool triangulateDenseTrack(DenseTrack& track, const std::vector<CameraPose>& poses, float min_parallax_deg);
+    bool triangulateDenseTrack(
+        DenseTrack& track, 
+        const std::vector<CameraPose>& poses, 
+        const std::vector<cv::Mat>& cam_centers,
+        float min_parallax_deg);
 };

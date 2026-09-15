@@ -588,16 +588,18 @@ fun ArSplatCaptureDemo(onBack: () -> Unit) {
                 engine = engine,
                 modelLoader = modelLoader,
                 materialLoader = materialLoader,
+                planeRenderer = false,
                 sessionCameraConfig = { session ->
                     val configs = session.getSupportedCameraConfigs(com.google.ar.core.CameraConfigFilter(session))
                     val p1080_60 = configs.firstOrNull { it.imageSize.height >= 1080 && it.fpsRange.upper >= 60 }
                     val p720_60 = configs.firstOrNull { it.imageSize.height >= 720 && it.fpsRange.upper >= 60 }
                     p1080_60 ?: p720_60 ?: session.cameraConfig
                 },
-                    sessionConfiguration = { session, config ->
-                        config.focusMode = if (isAutoFocus) Config.FocusMode.AUTO else Config.FocusMode.FIXED
-                        config.depthMode = Config.DepthMode.DISABLED
-                    },
+                sessionConfiguration = { session, config ->
+                    config.focusMode = if (isAutoFocus) Config.FocusMode.AUTO else Config.FocusMode.FIXED
+                    config.depthMode = Config.DepthMode.DISABLED
+                    config.planeFindingMode = Config.PlaneFindingMode.DISABLED
+                },
                     onSessionUpdated = { session, frame ->
                         if (arSession != session) {
                             arSession = session

@@ -1,6 +1,9 @@
 #include "dense_tracker.h"
 #include <android/log.h>
 #include <cmath>
+#include <thread>
+#include <atomic>
+#include <algorithm>
 
 #define LOG_TAG "DenseTracker"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -43,18 +46,19 @@ cv::Point2f DenseTracker::projectToEpipolarLine(const cv::Point2f& pt, const cv:
 bool DenseTracker::triangulateDenseTrack(
     DenseTrack& track, 
     const std::vector<CameraPose>& poses, 
+    const std::vector<cv::Mat>& cam_centers,
     float min_parallax_deg) {
     
     if (track.observations.size() < 2) return false;
 
-    // Check angular baseline between first and last camera
+    // Check physical baseline between first and last camera
     const auto& first_obs = track.observations.front();
     const auto& last_obs = track.observations.back();
     const auto& pose1 = poses[first_obs.camera_idx];
     const auto& pose2 = poses[last_obs.camera_idx];
 
-    cv::Mat c1 = -pose1.R.t() * pose1.t;
-    cv::Mat c2 = -pose2.R.t() * pose2.t;
+    const cv::Mat& c1 = cam_centers[first_obs.camera_idx];
+    const cv::Mat& c2 = cam_centers[last_obs.camera_idx];
     float baseline_dist = static_cast<float>(cv::norm(c1 - c2));
     if (baseline_dist < 0.008f) return false; // Minimum physical baseline: 8mm
 
@@ -89,6 +93,12 @@ bool DenseTracker::triangulateDenseTrack(
         X.at<float>(1, 0) / w,
         X.at<float>(2, 0) / w
     );
+
+    // Fast positive depth check in front of both cameras
+    cv::Mat pt3d_m = (cv::Mat_<float>(3, 1) << track.pt3d.x, track.pt3d.y, track.pt3d.z);
+    cv::Mat p_cam1 = pose1.R * pt3d_m + pose1.t;
+    cv::Mat p_cam2 = pose2.R * pt3d_m + pose2.t;
+    if (p_cam1.at<float>(2, 0) <= 0.05f || p_cam2.at<float>(2, 0) <= 0.05f) return false;
 
     // Parallax angle check
     cv::Point3f p = track.pt3d;
@@ -128,6 +138,12 @@ std::vector<DenseTrack> DenseTracker::trackAndTriangulate(
     if (images.size() < 2 || poses.size() != images.size()) return triangulated_tracks;
 
     int n_frames = images.size();
+
+    // Precompute camera optical centers
+    std::vector<cv::Mat> cam_centers(n_frames);
+    for (int i = 0; i < n_frames; ++i) {
+        cam_centers[i] = -poses[i].R.t() * poses[i].t;
+    }
 
     // Prepare grayscale representations for optical flow
     std::vector<cv::Mat> grays(n_frames);
@@ -198,7 +214,7 @@ std::vector<DenseTrack> DenseTracker::trackAndTriangulate(
             std::vector<uchar> fwd_status;
             std::vector<float> fwd_err;
 
-            // Forward optical flow: 5 pyramid levels (maxLevel=4), 25x25 window, 30 iterations
+            // Forward optical flow: 5 pyramid levels (maxLevel=4), 25x25 window, 30 iterations at 0.01 EPS
             cv::calcOpticalFlowPyrLK(
                 grays[f], grays[f + 1],
                 valid_prev_pts, next_pts,
@@ -262,11 +278,40 @@ std::vector<DenseTrack> DenseTracker::trackAndTriangulate(
             }
         }
 
-        // Triangulate tracks that accumulated sufficient baseline
+        // Filter tracks with at least 2 observations
+        std::vector<DenseTrack> candidate_tracks;
+        candidate_tracks.reserve(active_tracks.size());
         for (auto& track : active_tracks) {
             if (track.observations.size() >= 2) {
-                if (triangulateDenseTrack(track, poses, min_parallax_deg)) {
-                    triangulated_tracks.push_back(std::move(track));
+                candidate_tracks.push_back(std::move(track));
+            }
+        }
+
+        // Parallel triangulation of active tracks across all CPU cores
+        if (!candidate_tracks.empty()) {
+            std::vector<bool> track_valid(candidate_tracks.size(), false);
+            int num_threads = std::max(1u, std::thread::hardware_concurrency());
+            std::vector<std::thread> workers;
+            std::atomic<size_t> next_track_idx{0};
+
+            for (int t = 0; t < num_threads; ++t) {
+                workers.emplace_back([&]() {
+                    while (true) {
+                        size_t idx = next_track_idx.fetch_add(1);
+                        if (idx >= candidate_tracks.size()) break;
+                        if (triangulateDenseTrack(candidate_tracks[idx], poses, cam_centers, min_parallax_deg)) {
+                            track_valid[idx] = true;
+                        }
+                    }
+                });
+            }
+            for (auto& w : workers) {
+                w.join();
+            }
+
+            for (size_t i = 0; i < candidate_tracks.size(); ++i) {
+                if (track_valid[i]) {
+                    triangulated_tracks.push_back(std::move(candidate_tracks[i]));
                 }
             }
         }

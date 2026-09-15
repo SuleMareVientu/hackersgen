@@ -97,6 +97,8 @@ target_include_directories(splat_capture_jni PRIVATE
     ${eigen_SOURCE_DIR}
 )
 
+target_compile_options(splat_capture_jni PRIVATE -O3)
+
 # Link splat_capture_jni against yuv, TFLite core, OpenCV, Ceres, and Android log/libraries
 target_link_libraries(splat_capture_jni
     tensorflow-lite

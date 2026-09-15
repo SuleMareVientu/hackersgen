@@ -1,6 +1,8 @@
 #include "bundle_adjuster.h"
 #include <ceres/rotation.h>
 #include <android/log.h>
+#include <thread>
+#include <algorithm>
 
 #define LOG_TAG "BundleAdjuster"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -181,6 +183,7 @@ bool BundleAdjuster::optimize(
 
     ceres::Solver::Options options;
     options.linear_solver_type = ceres::DENSE_SCHUR;
+    options.num_threads = std::max(1u, std::thread::hardware_concurrency());
     options.max_num_iterations = 100;
     options.max_solver_time_in_seconds = static_cast<double>(max_time_seconds);
     options.minimizer_progress_to_stdout = false;

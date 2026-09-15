@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <cmath>
 #include <numeric>
+#include <thread>
+#include <atomic>
 
 #define LOG_TAG "PointCloudFilter"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -18,52 +20,73 @@ std::vector<Track> PointCloudFilter::filterConsistency(
     float max_reproj_err) {
 
     std::vector<Track> consistent_tracks;
+    if (dense_tracks.empty()) return consistent_tracks;
+
+    std::vector<bool> keep(dense_tracks.size(), false);
+    int num_threads = std::max(1u, std::thread::hardware_concurrency());
+    std::vector<std::thread> workers;
+    std::atomic<size_t> next_idx{0};
+
+    for (int t = 0; t < num_threads; ++t) {
+        workers.emplace_back([&]() {
+            while (true) {
+                size_t i = next_idx.fetch_add(1);
+                if (i >= dense_tracks.size()) break;
+                const auto& dt = dense_tracks[i];
+                if (!dt.valid) continue;
+                if (static_cast<int>(dt.observations.size()) < min_views) continue;
+
+                float total_err = 0.0f;
+                bool all_valid = true;
+
+                for (const auto& obs : dt.observations) {
+                    if (obs.camera_idx >= poses.size()) {
+                        all_valid = false;
+                        break;
+                    }
+                    const auto& pose = poses[obs.camera_idx];
+                    cv::Mat pt3d_mat = (cv::Mat_<float>(3, 1) << dt.pt3d.x, dt.pt3d.y, dt.pt3d.z);
+                    cv::Mat pt_cam = pose.R * pt3d_mat + pose.t;
+                    cv::Mat pt_proj = pose.K * pt_cam;
+
+                    float z = pt_proj.at<float>(2, 0);
+                    if (z <= 0.01f) {
+                        all_valid = false;
+                        break;
+                    }
+
+                    float u_proj = pt_proj.at<float>(0, 0) / z;
+                    float v_proj = pt_proj.at<float>(1, 0) / z;
+
+                    float du = u_proj - obs.pt2d.x;
+                    float dv = v_proj - obs.pt2d.y;
+                    float err = std::sqrt(du * du + dv * dv);
+                    if (err > max_reproj_err * 1.5f) {
+                        all_valid = false;
+                        break;
+                    }
+                    total_err += err;
+                }
+
+                if (!all_valid) continue;
+
+                float mean_err = total_err / dt.observations.size();
+                if (mean_err <= max_reproj_err) {
+                    keep[i] = true;
+                }
+            }
+        });
+    }
+    for (auto& w : workers) {
+        w.join();
+    }
+
     consistent_tracks.reserve(dense_tracks.size());
-
-    for (const auto& dt : dense_tracks) {
-        if (!dt.valid) continue;
-        // Require corroboration across >= min_views independent views (§3.8)
-        if (static_cast<int>(dt.observations.size()) < min_views) continue;
-
-        float total_err = 0.0f;
-        bool all_valid = true;
-
-        for (const auto& obs : dt.observations) {
-            if (obs.camera_idx >= poses.size()) {
-                all_valid = false;
-                break;
-            }
-            const auto& pose = poses[obs.camera_idx];
-            cv::Mat pt3d_mat = (cv::Mat_<float>(3, 1) << dt.pt3d.x, dt.pt3d.y, dt.pt3d.z);
-            cv::Mat pt_cam = pose.R * pt3d_mat + pose.t;
-            cv::Mat pt_proj = pose.K * pt_cam;
-
-            float z = pt_proj.at<float>(2, 0);
-            if (z <= 0.01f) {
-                all_valid = false;
-                break;
-            }
-
-            float u_proj = pt_proj.at<float>(0, 0) / z;
-            float v_proj = pt_proj.at<float>(1, 0) / z;
-
-            float du = u_proj - obs.pt2d.x;
-            float dv = v_proj - obs.pt2d.y;
-            float err = std::sqrt(du * du + dv * dv);
-            if (err > max_reproj_err * 1.5f) {
-                all_valid = false;
-                break;
-            }
-            total_err += err;
-        }
-
-        if (!all_valid) continue;
-
-        float mean_err = total_err / dt.observations.size();
-        if (mean_err <= max_reproj_err) {
+    for (size_t i = 0; i < dense_tracks.size(); ++i) {
+        if (keep[i]) {
             Track t;
-            t.observations = dt.observations;
-            t.pt3d = dt.pt3d;
+            t.observations = dense_tracks[i].observations;
+            t.pt3d = dense_tracks[i].pt3d;
             t.valid = true;
             consistent_tracks.push_back(std::move(t));
         }
@@ -122,43 +145,56 @@ std::vector<Track> PointCloudFilter::fuseAndFilter(
     std::vector<float> avg_distances(all_tracks.size(), 0.0f);
     std::vector<bool> sor_keep(all_tracks.size(), true);
 
-    for (size_t i = 0; i < all_tracks.size(); ++i) {
-        const auto& p = all_tracks[i].pt3d;
-        int ix = static_cast<int>(std::floor(p.x / search_cell_size));
-        int iy = static_cast<int>(std::floor(p.y / search_cell_size));
-        int iz = static_cast<int>(std::floor(p.z / search_cell_size));
+    int num_threads_sor = std::max(1u, std::thread::hardware_concurrency());
+    std::vector<std::thread> sor_workers;
+    std::atomic<size_t> next_sor_idx{0};
 
-        std::vector<float> neighbor_dists;
+    for (int t = 0; t < num_threads_sor; ++t) {
+        sor_workers.emplace_back([&]() {
+            while (true) {
+                size_t i = next_sor_idx.fetch_add(1);
+                if (i >= all_tracks.size()) break;
 
-        for (int dx = -1; dx <= 1; ++dx) {
-            for (int dy = -1; dy <= 1; ++dy) {
-                for (int dz = -1; dz <= 1; ++dz) {
-                    auto it = search_grid.find(hashVoxel(ix + dx, iy + dy, iz + dz));
-                    if (it != search_grid.end()) {
-                        for (int neighbor_idx : it->second) {
-                            if (neighbor_idx == static_cast<int>(i)) continue;
-                            const auto& np = all_tracks[neighbor_idx].pt3d;
-                            float d = cv::norm(p - np);
-                            neighbor_dists.push_back(d);
+                const auto& p = all_tracks[i].pt3d;
+                int ix = static_cast<int>(std::floor(p.x / search_cell_size));
+                int iy = static_cast<int>(std::floor(p.y / search_cell_size));
+                int iz = static_cast<int>(std::floor(p.z / search_cell_size));
+
+                std::vector<float> neighbor_dists;
+
+                for (int dx = -1; dx <= 1; ++dx) {
+                    for (int dy = -1; dy <= 1; ++dy) {
+                        for (int dz = -1; dz <= 1; ++dz) {
+                            auto it = search_grid.find(hashVoxel(ix + dx, iy + dy, iz + dz));
+                            if (it != search_grid.end()) {
+                                for (int neighbor_idx : it->second) {
+                                    if (neighbor_idx == static_cast<int>(i)) continue;
+                                    const auto& np = all_tracks[neighbor_idx].pt3d;
+                                    float d = cv::norm(p - np);
+                                    neighbor_dists.push_back(d);
+                                }
+                            }
                         }
                     }
                 }
+
+                if (neighbor_dists.size() < 2) {
+                    avg_distances[i] = 999.0f;
+                    continue;
+                }
+
+                std::sort(neighbor_dists.begin(), neighbor_dists.end());
+                int k_use = std::min(static_cast<int>(neighbor_dists.size()), knn_k);
+                float sum_d = 0.0f;
+                for (int k = 0; k < k_use; ++k) {
+                    sum_d += neighbor_dists[k];
+                }
+                avg_distances[i] = sum_d / k_use;
             }
-        }
-
-        if (neighbor_dists.size() < 2) {
-            // Very isolated point with no neighbors: mark as outlier
-            avg_distances[i] = 999.0f;
-            continue;
-        }
-
-        std::sort(neighbor_dists.begin(), neighbor_dists.end());
-        int k_use = std::min(static_cast<int>(neighbor_dists.size()), knn_k);
-        float sum_d = 0.0f;
-        for (int k = 0; k < k_use; ++k) {
-            sum_d += neighbor_dists[k];
-        }
-        avg_distances[i] = sum_d / k_use;
+        });
+    }
+    for (auto& w : sor_workers) {
+        w.join();
     }
 
     // Compute distribution statistics across valid points

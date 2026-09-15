@@ -52,42 +52,36 @@ std::vector<FeatureMatch> FeatureMatcher::matchMNN(const std::vector<Keypoint>& 
     // Matrix multiplication: A * B^T
     cv::Mat scores = desc_a * desc_b.t();
     
-    // For each point in A, find best in B
+    // Single sequential row-major pass to find mutual nearest neighbors (§3.4)
     std::vector<int> best_in_b(Na, -1);
+    std::vector<float> best_score_in_b(Na, -1.0f);
+    std::vector<int> best_in_a(Nb, -1);
+    std::vector<float> best_score_in_a(Nb, -1.0f);
+
     for (int i = 0; i < Na; ++i) {
-        float best_score = -1.0f;
-        int best_idx = -1;
         const float* row = scores.ptr<float>(i);
         for (int j = 0; j < Nb; ++j) {
-            if (row[j] > best_score) {
-                best_score = row[j];
-                best_idx = j;
+            float val = row[j];
+            if (val > best_score_in_b[i]) {
+                best_score_in_b[i] = val;
+                best_in_b[i] = j;
             }
-        }
-        if (best_score > 0.82f) { // Threshold for matching
-            best_in_b[i] = best_idx;
+            if (val > best_score_in_a[j]) {
+                best_score_in_a[j] = val;
+                best_in_a[j] = i;
+            }
         }
     }
-    
-    // For each point in B, find best in A (Mutual Nearest Neighbor)
-    for (int j = 0; j < Nb; ++j) {
-        float best_score = -1.0f;
-        int best_idx = -1;
-        for (int i = 0; i < Na; ++i) {
-            float s = scores.at<float>(i, j);
-            if (s > best_score) {
-                best_score = s;
-                best_idx = i;
-            }
-        }
-        
-        // Check mutual
-        if (best_score > 0.82f && best_idx >= 0) {
-            if (best_in_b[best_idx] == j) {
+
+    const float MATCH_THRESHOLD = 0.82f;
+    for (int i = 0; i < Na; ++i) {
+        if (best_score_in_b[i] > MATCH_THRESHOLD) {
+            int j = best_in_b[i];
+            if (j >= 0 && best_in_a[j] == i && best_score_in_a[j] > MATCH_THRESHOLD) {
                 FeatureMatch m;
-                m.idx_a = best_idx;
+                m.idx_a = i;
                 m.idx_b = j;
-                m.distance = best_score;
+                m.distance = best_score_in_b[i];
                 matches.push_back(m);
             }
         }

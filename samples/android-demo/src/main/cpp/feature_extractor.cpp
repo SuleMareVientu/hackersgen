@@ -142,7 +142,7 @@ std::vector<Keypoint> FeatureExtractor::extractFeatures(const cv::Mat& image) {
         
         int H_feat = 60;
         int W_feat = 80;
-        float threshold = 0.04f;
+        float threshold = 0.05f;
         
         std::vector<Keypoint> local_kpts;
         
@@ -198,6 +198,11 @@ std::vector<Keypoint> FeatureExtractor::extractFeatures(const cv::Mat& image) {
             return a.response > b.response;
         });
         
+        // Bound candidate count before NMS to prevent O(N^2) CPU explosion
+        if (local_kpts.size() > 1000) {
+            local_kpts.resize(1000);
+        }
+
         float nms_dist_sq = 2.5f * 2.5f;
         std::vector<bool> keep(local_kpts.size(), true);
         for (size_t i = 0; i < local_kpts.size(); ++i) {
@@ -215,10 +220,10 @@ std::vector<Keypoint> FeatureExtractor::extractFeatures(const cv::Mat& image) {
         }
     } // End of tiles loop
     
-    // Grid-enforced retention (§3.2): 16x12 grid, keep top-k points per cell
-    const int GRID_COLS = 16;
-    const int GRID_ROWS = 12;
-    const size_t MAX_KPTS_PER_CELL = 45; // 192 cells * 45 = up to ~8640 points
+    // Grid-enforced retention (§3.2): 12x8 grid, keep top-k points per cell
+    const int GRID_COLS = 12;
+    const int GRID_ROWS = 8;
+    const size_t MAX_KPTS_PER_CELL = 35; // 96 cells * 35 = up to ~3360 points
 
     std::vector<Keypoint> cell_grid[GRID_ROWS][GRID_COLS];
     float cell_w = static_cast<float>(img_w) / GRID_COLS;
