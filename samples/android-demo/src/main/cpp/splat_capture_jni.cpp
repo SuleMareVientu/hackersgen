@@ -22,6 +22,35 @@
 #include <thread>
 #include <atomic>
 
+static double ComputeSharpnessScore(const cv::Mat& bgr_img) {
+    if (bgr_img.empty()) return 0.0;
+    cv::Mat gray;
+    if (bgr_img.channels() == 3) {
+        cv::cvtColor(bgr_img, gray, cv::COLOR_BGR2GRAY);
+    } else if (bgr_img.channels() == 4) {
+        cv::cvtColor(bgr_img, gray, cv::COLOR_BGRA2GRAY);
+    } else {
+        gray = bgr_img;
+    }
+
+    // Downscale to 25% scale to capture macro structural edges rather than sensor/Bayer noise
+    cv::Mat small_gray;
+    cv::resize(gray, small_gray, cv::Size(), 0.25, 0.25, cv::INTER_AREA);
+
+    // Light Gaussian blur (3x3) to eliminate high-frequency pixel noise
+    cv::Mat blurred;
+    cv::GaussianBlur(small_gray, blurred, cv::Size(3, 3), 0);
+
+    // Compute Laplacian
+    cv::Mat laplacian;
+    cv::Laplacian(blurred, laplacian, CV_64F, 3);
+
+    // Calculate variance = stddev^2
+    cv::Scalar mean, stddev;
+    cv::meanStdDev(laplacian, mean, stddev);
+    return stddev[0] * stddev[0];
+}
+
 class SplatCapturePipeline {
 public:
   SplatCapturePipeline(const std::string &model_path) {
@@ -62,9 +91,12 @@ public:
       // Skip the count line
       std::getline(infile, line);
       
-      std::vector<CameraPose> poses;
-      std::vector<cv::Mat> images;
-      std::vector<std::string> image_names;
+      struct FrameInputMeta {
+          std::string img_path;
+          CameraPose pose;
+          std::string img_name;
+      };
+      std::vector<FrameInputMeta> frame_metas;
       
       while (std::getline(infile, line)) {
           if (line.empty()) continue;
@@ -101,16 +133,112 @@ public:
               pose.is_rolling_shutter = (rs_flag != 0);
           }
           
-          poses.push_back(pose);
-          
-          cv::Mat img = cv::imread(img_path);
-          images.push_back(img);
-          
           size_t slash_pos = img_path.find_last_of('/');
-          image_names.push_back((slash_pos != std::string::npos) ? img_path.substr(slash_pos + 1) : img_path);
+          std::string img_name = (slash_pos != std::string::npos) ? img_path.substr(slash_pos + 1) : img_path;
+          frame_metas.push_back({img_path, pose, img_name});
       }
       
-      LOGI("Loaded %zu frames", poses.size());
+      size_t n_frames = frame_metas.size();
+      std::vector<CameraPose> poses(n_frames);
+      std::vector<std::string> image_names(n_frames);
+      std::vector<cv::Mat> images(n_frames);
+      std::vector<double> sharpness_scores(n_frames, 0.0);
+
+      for (size_t i = 0; i < n_frames; ++i) {
+          poses[i] = frame_metas[i].pose;
+          image_names[i] = frame_metas[i].img_name;
+      }
+
+      // Parallel image loading, decoding, & sharpness scoring across all CPU cores
+      int num_threads_load = std::max(1u, std::thread::hardware_concurrency());
+      std::vector<std::thread> load_workers;
+      std::atomic<size_t> next_load_idx{0};
+
+      for (int t = 0; t < num_threads_load; ++t) {
+          load_workers.emplace_back([&]() {
+              while (!cancel_) {
+                  size_t i = next_load_idx.fetch_add(1);
+                  if (i >= n_frames) break;
+                  images[i] = cv::imread(frame_metas[i].img_path);
+                  if (!images[i].empty()) {
+                      sharpness_scores[i] = ComputeSharpnessScore(images[i]);
+                  }
+              }
+          });
+      }
+      for (auto& w : load_workers) { w.join(); }
+
+      if (cancel_) return;
+      LOGI("Loaded and scored %zu frames in parallel", n_frames);
+
+      // Relative dataset thresholding (discard outliers below mu - 1.5 * sigma)
+      if (n_frames >= 8) {
+          double sum = 0.0;
+          for (size_t i = 0; i < n_frames; ++i) {
+              sum += sharpness_scores[i];
+          }
+          double mean_sharpness = sum / n_frames;
+          double sq_sum = 0.0;
+          for (size_t i = 0; i < n_frames; ++i) {
+              double diff = sharpness_scores[i] - mean_sharpness;
+              sq_sum += diff * diff;
+          }
+          double std_sharpness = std::sqrt(sq_sum / n_frames);
+          double threshold = std::max(0.0, mean_sharpness - 1.0 * std_sharpness);
+
+          std::vector<size_t> kept_indices;
+          std::vector<size_t> rejected_indices;
+          for (size_t i = 0; i < n_frames; ++i) {
+              if (sharpness_scores[i] >= threshold) {
+                  kept_indices.push_back(i);
+              } else {
+                  rejected_indices.push_back(i);
+              }
+          }
+
+          // Safety guard: reject at most 25% of frames and keep at least 6 frames
+          size_t max_allowed_rejects = n_frames / 4;
+          if (rejected_indices.size() > max_allowed_rejects || kept_indices.size() < 6) {
+              std::sort(rejected_indices.begin(), rejected_indices.end(), [&](size_t a, size_t b) {
+                  return sharpness_scores[a] > sharpness_scores[b];
+              });
+              while ((rejected_indices.size() > max_allowed_rejects || kept_indices.size() < 6) && !rejected_indices.empty()) {
+                  kept_indices.push_back(rejected_indices.front());
+                  rejected_indices.erase(rejected_indices.begin());
+              }
+              std::sort(kept_indices.begin(), kept_indices.end());
+          }
+
+          if (kept_indices.size() < n_frames) {
+              LOGI("Sharpness filter: mean=%.2f, std=%.2f, threshold=%.2f. Kept %zu/%zu frames (pruned %zu blurry outliers)",
+                   mean_sharpness, std_sharpness, threshold, kept_indices.size(), n_frames, n_frames - kept_indices.size());
+
+              std::vector<CameraPose> filtered_poses;
+              std::vector<std::string> filtered_names;
+              std::vector<cv::Mat> filtered_images;
+              std::vector<FrameInputMeta> filtered_metas;
+              filtered_poses.reserve(kept_indices.size());
+              filtered_names.reserve(kept_indices.size());
+              filtered_images.reserve(kept_indices.size());
+              filtered_metas.reserve(kept_indices.size());
+
+              for (size_t idx : kept_indices) {
+                  filtered_poses.push_back(poses[idx]);
+                  filtered_names.push_back(image_names[idx]);
+                  filtered_images.push_back(images[idx]);
+                  filtered_metas.push_back(frame_metas[idx]);
+              }
+
+              poses = std::move(filtered_poses);
+              image_names = std::move(filtered_names);
+              images = std::move(filtered_images);
+              frame_metas = std::move(filtered_metas);
+              n_frames = poses.size();
+          } else {
+              LOGI("Sharpness filter: mean=%.2f, std=%.2f, threshold=%.2f. All %zu frames are sharp.",
+                   mean_sharpness, std_sharpness, threshold, n_frames);
+          }
+      }
       const std::vector<CameraPose> arcore_poses = poses;
       
       // Feature Extraction
@@ -314,18 +442,35 @@ public:
        // Phase 5: Dense Guided Fill (§3.7)
        current_phase_ = 5;
        auto t_dense_start = std::chrono::steady_clock::now();
-       auto dense_candidates = dense_tracker_->trackAndTriangulate(images, arcore_poses, 1.2f, 3, 8);
+
+       int adaptive_grid_step = 3;
+       float max_reproj = 1.5f;
+       if (!images.empty()) {
+           int min_dim = std::min(images[0].cols, images[0].rows);
+           if (min_dim <= 540) {        // 480p
+               adaptive_grid_step = 1;
+               max_reproj = 0.9f;
+           } else if (min_dim <= 800) { // 720p
+               adaptive_grid_step = 2;
+               max_reproj = 1.2f;
+           } else {                     // 1080p
+               adaptive_grid_step = 3;
+               max_reproj = 1.5f;
+           }
+       }
+
+       auto dense_candidates = dense_tracker_->trackAndTriangulate(images, arcore_poses, 1.2f, adaptive_grid_step, 8);
        auto t_dense_end = std::chrono::steady_clock::now();
-       LOGI("Phase 5 (Dense Guided Fill) took %lld ms (%zu candidates)",
+       LOGI("Phase 5 (Dense Guided Fill) took %lld ms (%zu candidates, step=%d)",
             (long long)std::chrono::duration_cast<std::chrono::milliseconds>(t_dense_end - t_dense_start).count(),
-            dense_candidates.size());
+            dense_candidates.size(), adaptive_grid_step);
 
        if (cancel_) return;
 
        // Phase 6: Multi-View Consistency Filter & Fusion/Thinning (§3.8, §3.9)
        current_phase_ = 6;
        auto t_filter_start = std::chrono::steady_clock::now();
-       auto consistent_dense = point_cloud_filter_->filterConsistency(dense_candidates, arcore_poses, 2, 1.5f);
+       auto consistent_dense = point_cloud_filter_->filterConsistency(dense_candidates, arcore_poses, 2, max_reproj);
        auto final_points = point_cloud_filter_->fuseAndFilter(tracks, consistent_dense, 0.0015f);
        auto t_filter_end = std::chrono::steady_clock::now();
        LOGI("Phase 6 (Consistency & Fusion) took %lld ms (%zu final points)",
@@ -346,7 +491,11 @@ public:
        current_phase_ = 8; // Complete
   }
 
-  void Clear() { cancel_ = true; }
+  void Clear() {
+      cancel_ = true;
+      point_count_ = 0;
+      current_phase_ = 0;
+  }
   int GetPendingFramesCount() { return 0; }
   int GetProcessedFramesCount() { return 0; }
   int GetPointCount() { return point_count_; }

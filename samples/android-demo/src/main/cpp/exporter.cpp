@@ -2,6 +2,9 @@
 #include <fstream>
 #include <android/log.h>
 #include <iomanip>
+#include <thread>
+#include <atomic>
+#include <algorithm>
 
 #define LOG_TAG "Exporter"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -67,16 +70,17 @@ bool Exporter::exportNerfstudio(
     
     if (poses.empty()) return false;
 
-    // 1. Export points.ply (primary for Nerfstudio/Brush) and points3D.ply (for COLMAP)
+    // 1. Export points.ply (primary for Nerfstudio/Brush)
     std::string ply_filename = "points.ply";
     std::string ply_path = output_dir + "/" + ply_filename;
-    std::string colmap_ply_path = output_dir + "/points3D.ply";
 
-    // Count valid points
-    int num_valid_tracks = 0;
+    // Collect valid tracks
+    std::vector<const Track*> valid_tracks;
+    valid_tracks.reserve(tracks.size());
     for (const auto& track : tracks) {
-        if (track.valid) num_valid_tracks++;
+        if (track.valid) valid_tracks.push_back(&track);
     }
+    int num_valid_tracks = static_cast<int>(valid_tracks.size());
 
     if (binary) {
         std::ofstream ply_file(ply_path, std::ios::binary);
@@ -88,6 +92,7 @@ bool Exporter::exportNerfstudio(
         std::string header = 
             "ply\n"
             "format binary_little_endian 1.0\n"
+            "comment vertical axis: y\n"
             "element vertex " + std::to_string(num_valid_tracks) + "\n"
             "property float x\n"
             "property float y\n"
@@ -105,37 +110,39 @@ bool Exporter::exportNerfstudio(
         };
 #pragma pack(pop)
 
-        std::vector<VertexBinary> buffer;
-        buffer.reserve(num_valid_tracks);
+        std::vector<VertexBinary> buffer(num_valid_tracks);
 
-        for (const auto& track : tracks) {
-            if (!track.valid) continue;
-            cv::Vec3b color = computeTrackColor(track, images);
+        int num_threads = std::max(1u, std::thread::hardware_concurrency());
+        std::vector<std::thread> workers;
+        std::atomic<size_t> next_idx{0};
 
-            VertexBinary v;
-            v.x = track.pt3d.x;
-            v.y = track.pt3d.y;
-            v.z = track.pt3d.z;
-            v.red = static_cast<uint8_t>(color[2]);   // OpenCV BGR -> R
-            v.green = static_cast<uint8_t>(color[1]); // G
-            v.blue = static_cast<uint8_t>(color[0]);  // B
-            buffer.push_back(v);
+        for (int t = 0; t < num_threads; ++t) {
+            workers.emplace_back([&]() {
+                while (true) {
+                    size_t i = next_idx.fetch_add(1);
+                    if (i >= valid_tracks.size()) break;
+
+                    const auto* track = valid_tracks[i];
+                    cv::Vec3b color = computeTrackColor(*track, images);
+
+                    // 180° rotation around X-axis (y -> -y, z -> -z) to invert upright axis
+                    buffer[i].x =  track->pt3d.x;
+                    buffer[i].y = -track->pt3d.y;
+                    buffer[i].z = -track->pt3d.z;
+                    buffer[i].red = static_cast<uint8_t>(color[2]);   // OpenCV BGR -> R
+                    buffer[i].green = static_cast<uint8_t>(color[1]); // G
+                    buffer[i].blue = static_cast<uint8_t>(color[0]);  // B
+                }
+            });
+        }
+        for (auto& w : workers) {
+            w.join();
         }
 
         if (!buffer.empty()) {
             ply_file.write(reinterpret_cast<const char*>(buffer.data()), buffer.size() * sizeof(VertexBinary));
         }
         ply_file.close();
-
-        // Also write points3D.ply duplicate
-        std::ofstream colmap_file(colmap_ply_path, std::ios::binary);
-        if (colmap_file.is_open()) {
-            colmap_file.write(header.c_str(), header.size());
-            if (!buffer.empty()) {
-                colmap_file.write(reinterpret_cast<const char*>(buffer.data()), buffer.size() * sizeof(VertexBinary));
-            }
-            colmap_file.close();
-        }
     } else {
         std::ofstream ply_file(ply_path);
         if (!ply_file.is_open()) {
@@ -145,6 +152,7 @@ bool Exporter::exportNerfstudio(
 
         ply_file << "ply\n";
         ply_file << "format ascii 1.0\n";
+        ply_file << "comment vertical axis: y\n";
         ply_file << "element vertex " << num_valid_tracks << "\n";
         ply_file << "property float x\n";
         ply_file << "property float y\n";
@@ -154,38 +162,33 @@ bool Exporter::exportNerfstudio(
         ply_file << "property uchar blue\n";
         ply_file << "end_header\n";
 
-        for (const auto& track : tracks) {
-            if (!track.valid) continue;
-            
-            cv::Vec3b color = computeTrackColor(track, images);
-            
-            float x = track.pt3d.x;
-            float y = track.pt3d.y;
-            float z = track.pt3d.z;
-            
-            int b = color[0];
-            int g = color[1];
-            int r = color[2];
+        std::vector<cv::Vec3b> colors(num_valid_tracks);
+        int num_threads = std::max(1u, std::thread::hardware_concurrency());
+        std::vector<std::thread> workers;
+        std::atomic<size_t> next_idx{0};
 
-            ply_file << x << " " << y << " " << z << " " 
-                     << r << " " << g << " " << b << "\n";
+        for (int t = 0; t < num_threads; ++t) {
+            workers.emplace_back([&]() {
+                while (true) {
+                    size_t i = next_idx.fetch_add(1);
+                    if (i >= valid_tracks.size()) break;
+                    colors[i] = computeTrackColor(*valid_tracks[i], images);
+                }
+            });
+        }
+        for (auto& w : workers) {
+            w.join();
+        }
+
+        for (size_t i = 0; i < valid_tracks.size(); ++i) {
+            const auto* track = valid_tracks[i];
+            const auto& color = colors[i];
+
+            // 180° rotation around X-axis (y -> -y, z -> -z)
+            ply_file << track->pt3d.x << " " << -track->pt3d.y << " " << -track->pt3d.z << " " 
+                     << (int)color[2] << " " << (int)color[1] << " " << (int)color[0] << "\n";
         }
         ply_file.close();
-
-        // Also write points3D.ply duplicate
-        std::ofstream colmap_file(colmap_ply_path);
-        if (colmap_file.is_open()) {
-            colmap_file << "ply\nformat ascii 1.0\nelement vertex " << num_valid_tracks << "\n"
-                        << "property float x\nproperty float y\nproperty float z\n"
-                        << "property uchar red\nproperty uchar green\nproperty uchar blue\nend_header\n";
-            for (const auto& track : tracks) {
-                if (!track.valid) continue;
-                cv::Vec3b color = computeTrackColor(track, images);
-                colmap_file << track.pt3d.x << " " << track.pt3d.y << " " << track.pt3d.z << " " 
-                            << (int)color[2] << " " << (int)color[1] << " " << (int)color[0] << "\n";
-            }
-            colmap_file.close();
-        }
     }
 
     // 2. Export transforms.json
@@ -201,6 +204,12 @@ bool Exporter::exportNerfstudio(
     json_file << "  \"ply_file_path\": \"" << ply_filename << "\",\n";
     json_file << "  \"frames\": [\n";
 
+    // 180° rotation around X-axis in world space: y -> -y, z -> -z
+    cv::Mat R_flip_world = (cv::Mat_<float>(3, 3) << 
+                            1,  0,  0,
+                            0, -1,  0,
+                            0,  0, -1);
+
     for (size_t i = 0; i < poses.size(); ++i) {
         std::string filename = (i < image_names.size()) ? image_names[i] : "image_" + std::to_string(i) + ".jpg";
         std::string rel_path = filename;
@@ -212,12 +221,17 @@ bool Exporter::exportNerfstudio(
         cv::Mat c2w_R = poses[i].R.t();
         cv::Mat c2w_t = -c2w_R * poses[i].t;
         
-        // Flip Y and Z to convert to OpenGL coordinate system
+        // Flip camera Y and Z to convert to OpenGL camera convention (+X right, +Y up, -Z forward)
         cv::Mat flip = (cv::Mat_<float>(3, 3) << 
                         1, 0, 0,
                         0, -1, 0,
                         0, 0, -1);
         c2w_R = c2w_R * flip;
+
+        // Apply 180° X-axis world rotation to align with the inverted upright axis:
+        // c2w_new = R_flip_world * c2w
+        c2w_R = R_flip_world * c2w_R;
+        c2w_t = R_flip_world * c2w_t;
         
         json_file << "    {\n";
         json_file << "      \"file_path\": \"" << rel_path << "\",\n";

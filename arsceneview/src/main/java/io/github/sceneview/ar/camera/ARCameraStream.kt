@@ -11,6 +11,7 @@ import com.google.android.filament.RenderableManager
 import com.google.android.filament.Texture
 import com.google.android.filament.Texture.PixelBufferDescriptor
 import com.google.android.filament.VertexBuffer
+import com.google.ar.core.CameraConfig
 import com.google.ar.core.Config
 import com.google.ar.core.Coordinates2d
 import com.google.ar.core.Frame
@@ -454,6 +455,14 @@ open class ARCameraStream(
 
     // Note: ARCore expects the UV buffers to be direct or will assert in transformDisplayUvCoords
     private var transformedUvCoordinates: FloatBuffer? = null
+    private var lastCameraConfig: CameraConfig? = null
+
+    /**
+     * Explicitly forces recalculation of camera UV coordinates on the next frame.
+     */
+    fun invalidateUvCoordinates() {
+        transformedUvCoordinates = null
+    }
 
     // Hoisted into a field so destroy() can free it — building it inline in the
     // RenderableManager.Builder.geometry(...) call dropped the reference and leaked
@@ -492,8 +501,14 @@ open class ARCameraStream(
             cameraTexture = it
         }
 
+        val currentCameraConfig = runCatching { session.cameraConfig }.getOrNull()
+        val configChanged = lastCameraConfig != null && currentCameraConfig != null && !areCameraConfigsEqual(lastCameraConfig, currentCameraConfig)
+        if (currentCameraConfig != null) {
+            lastCameraConfig = currentCameraConfig
+        }
+
         // Recalculate camera Uvs if necessary.
-        if (transformedUvCoordinates == null || frame.hasDisplayGeometryChanged()) {
+        if (transformedUvCoordinates == null || frame.hasDisplayGeometryChanged() || configChanged) {
             val transformedUvCoordinates = transformedUvCoordinates ?: uvCoordinates.clone().also {
                 transformedUvCoordinates = it
             }
@@ -715,5 +730,14 @@ open class ARCameraStream(
 
         private val INDICES = shortArrayOf(0, 1, 2)
         private const val FLOAT_SIZE_IN_BYTES = java.lang.Float.SIZE / 8
+
+        fun areCameraConfigsEqual(a: CameraConfig?, b: CameraConfig?): Boolean {
+            if (a === b) return true
+            if (a == null || b == null) return false
+            return a.imageSize == b.imageSize &&
+                   a.textureSize == b.textureSize &&
+                   a.fpsRange == b.fpsRange &&
+                   a.facingDirection == b.facingDirection
+        }
     }
 }

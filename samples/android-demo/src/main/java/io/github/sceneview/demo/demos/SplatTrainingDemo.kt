@@ -57,6 +57,7 @@ import androidx.compose.material3.ButtonDefaults
 import com.splats.brush.BrushConfig
 import com.splats.brush.BrushEngine
 import com.splats.brush.BrushProgressListener
+import io.github.sceneview.demo.service.SplatTrainingService
 import io.github.sceneview.demo.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -70,6 +71,11 @@ import java.io.File
 fun SplatTrainingDemo(onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+
+    // Request Notification permission for Android 13+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) {}
 
     // Dataset selection states
     var datasetUri by remember { mutableStateOf<Uri?>(null) }
@@ -147,6 +153,8 @@ fun SplatTrainingDemo(onBack: () -> Unit) {
 
     // Set up progress listener cleanly
     DisposableEffect(scope) {
+        var lastNotificationUpdateMs = 0L
+
         BrushEngine.setProgressListener(object : BrushProgressListener {
             override fun onProgress(iter: Int, total: Int, elapsedMs: Long) {
                 scope.launch(Dispatchers.Main) {
@@ -154,6 +162,17 @@ fun SplatTrainingDemo(onBack: () -> Unit) {
                     totalIterations = total
                     trainingElapsedMs = elapsedMs
                     statusText = "Training…"
+                }
+                val now = System.currentTimeMillis()
+                if (now - lastNotificationUpdateMs >= 500L || iter >= total) {
+                    lastNotificationUpdateMs = now
+                    SplatTrainingService.updateProgress(
+                        context = context,
+                        iteration = iter,
+                        total = total,
+                        elapsedMs = elapsedMs,
+                        datasetName = datasetName
+                    )
                 }
             }
 
@@ -165,6 +184,7 @@ fun SplatTrainingDemo(onBack: () -> Unit) {
             }
 
             override fun onTrainingComplete() {
+                SplatTrainingService.stop(context)
                 scope.launch(Dispatchers.Main) {
                     statusText = "Finished!"
                     isTraining = false
@@ -189,6 +209,7 @@ fun SplatTrainingDemo(onBack: () -> Unit) {
         })
         onDispose {
             BrushEngine.setProgressListener(null)
+            SplatTrainingService.stop(context)
         }
     }
 
@@ -296,6 +317,17 @@ fun SplatTrainingDemo(onBack: () -> Unit) {
                         currentExportName = uniqueExportName
                         activeSplatId = timestamp.toString()
 
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                            if (androidx.core.content.ContextCompat.checkSelfPermission(
+                                    context,
+                                    android.Manifest.permission.POST_NOTIFICATIONS
+                                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                            ) {
+                                notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                            }
+                        }
+                        SplatTrainingService.start(context, iters, sanitizedDataset)
+
                         val config = BrushConfig().apply {
                             totalTrainIters = iters
                             exportName = uniqueExportName
@@ -305,6 +337,7 @@ fun SplatTrainingDemo(onBack: () -> Unit) {
                             try {
                                 val tempFile = copyUriToCache(context, datasetUri!!)
                                 if (tempFile == null || !tempFile.exists()) {
+                                    SplatTrainingService.stop(context)
                                     withContext(Dispatchers.Main) {
                                         statusText = "Error: Failed to prepare dataset file"
                                         isTraining = false
@@ -315,6 +348,7 @@ fun SplatTrainingDemo(onBack: () -> Unit) {
                                 val tempUri = Uri.fromFile(tempFile)
                                 BrushEngine.start(context, tempUri, config)
                             } catch (e: Exception) {
+                                SplatTrainingService.stop(context)
                                 withContext(Dispatchers.Main) {
                                     val errMsg = "Error: ${e.localizedMessage ?: e.message}"
                                     statusText = errMsg

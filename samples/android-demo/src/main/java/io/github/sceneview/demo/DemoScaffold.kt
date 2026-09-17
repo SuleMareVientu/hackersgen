@@ -167,6 +167,7 @@ fun DemoScaffold(
     title: String,
     onBack: () -> Unit,
     controls: (@Composable ColumnScope.() -> Unit)? = null,
+    controlsExpanded: androidx.compose.runtime.MutableState<Boolean>? = null,
     assetSource: AssetSourceState? = null,
     firstFrameRendered: androidx.compose.runtime.State<Boolean>? = null,
     peekHeader: String? = null,
@@ -302,6 +303,7 @@ fun DemoScaffold(
                     demoTitle = title,
                     controlsContent = controls,
                     haptic = haptic,
+                    controlsExpanded = controlsExpanded,
                     peekHeader = peekHeader,
                     onResetSettings = onResetSettings,
                 )
@@ -444,11 +446,13 @@ private fun BoxScope.DemoSettingsLayer(
     demoTitle: String,
     controlsContent: @Composable ColumnScope.() -> Unit,
     haptic: SceneViewHaptic,
+    controlsExpanded: androidx.compose.runtime.MutableState<Boolean>? = null,
     peekHeader: String? = null,
     onResetSettings: (() -> Unit)? = null,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    var expanded by rememberSaveable { mutableStateOf(false) }
+    val internalExpanded = rememberSaveable { mutableStateOf(false) }
+    var expanded by (controlsExpanded ?: internalExpanded)
     // Per-demo last-detent memory (#2084): read the persisted detent so the
     // sheet can reopen where the user last left it for this demo. Resolved
     // against the persistent settings store ([DemoSheetDetentStore]), so it

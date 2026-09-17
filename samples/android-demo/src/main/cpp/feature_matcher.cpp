@@ -103,10 +103,11 @@ std::vector<FeatureMatch> FeatureMatcher::filterEpipolar(
     cv::Mat F = computeFundamentalMatrix(pose_a, pose_b, pose_a.K, pose_b.K);
     float baseline = computeBaseline(pose_a, pose_b);
 
-    // Adaptive threshold: scale from 5px for narrow baseline to 3px for wide baseline
-    // (example heuristic: if baseline < 0.1m threshold = 5, if > 1.0m threshold = 2)
-    float threshold = 5.0f - (baseline - 0.1f) * (3.0f / 0.9f);
-    threshold = std::max(2.0f, std::min(5.0f, threshold));
+    // Adaptive threshold: scale from 5px for narrow baseline to 3px for wide baseline,
+    // scaled proportionally to resolution relative to 1080p
+    float res_scale = (pose_a.h > 0) ? (static_cast<float>(std::min(pose_a.w, pose_a.h)) / 1080.0f) : 1.0f;
+    float threshold = (5.0f - (baseline - 0.1f) * (3.0f / 0.9f)) * res_scale;
+    threshold = std::max(1.5f, std::min(5.0f, threshold));
 
     for (const auto& match : matches) {
         cv::Point2f pt_a = kpts_a[match.idx_a].pt;

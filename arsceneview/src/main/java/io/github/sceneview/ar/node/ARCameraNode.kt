@@ -2,6 +2,7 @@ package io.github.sceneview.ar.node
 
 import com.google.android.filament.Engine
 import com.google.ar.core.Camera
+import com.google.ar.core.CameraConfig
 import com.google.ar.core.Frame
 import com.google.ar.core.Pose
 import com.google.ar.core.Session
@@ -9,6 +10,7 @@ import com.google.ar.core.TrackingState
 import io.github.sceneview.ar.arcore.getProjectionTransform
 import io.github.sceneview.ar.arcore.position
 import io.github.sceneview.ar.arcore.quaternion
+import io.github.sceneview.ar.camera.ARCameraStream
 import io.github.sceneview.math.Transform
 import io.github.sceneview.node.CameraNode
 
@@ -101,11 +103,17 @@ open class ARCameraNode(engine: Engine) : CameraNode(engine) {
      * potentially stale cache. Render-thread only.
      */
     private var displayGeometryChanged: Boolean = true
+    private var lastCameraConfig: CameraConfig? = null
 
     open fun update(session: Session, frame: Frame) {
         this.session = session
         this.frame = frame
-        displayGeometryChanged = frame.hasDisplayGeometryChanged()
+        val currentCameraConfig = runCatching { session.cameraConfig }.getOrNull()
+        val configChanged = lastCameraConfig != null && currentCameraConfig != null && !ARCameraStream.areCameraConfigsEqual(lastCameraConfig, currentCameraConfig)
+        if (currentCameraConfig != null) {
+            lastCameraConfig = currentCameraConfig
+        }
+        displayGeometryChanged = frame.hasDisplayGeometryChanged() || configChanged
         onCameraUpdated(frame.camera)
     }
 

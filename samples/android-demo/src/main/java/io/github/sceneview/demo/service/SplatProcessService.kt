@@ -80,7 +80,7 @@ class SplatProcessService : Service() {
             try {
                 SplatCapturePipeline.processDataset(pipelineHandle, manifestPath)
                 
-                if (isActive) {
+                if (isActive && SplatCapturePipeline.getProcessingPhase(pipelineHandle) == 8) {
                     val intent = Intent("io.github.sceneview.demo.SPLAT_PROCESSING_COMPLETE")
                     intent.setPackage(packageName)
                     sendBroadcast(intent)
