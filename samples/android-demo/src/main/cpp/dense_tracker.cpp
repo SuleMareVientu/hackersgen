@@ -201,16 +201,11 @@ std::vector<DenseTrack> DenseTracker::trackAndTriangulate(
                 const cv::Mat& init_gray = grays[start_frame];
                 int w = init_gray.cols;
                 int h = init_gray.rows;
-                int min_dim = std::min(w, h);
-
-                int pyr_levels = (min_dim >= 1000) ? 4 : (min_dim >= 700 ? 3 : 2);
-                int win_sz = (min_dim >= 1000) ? 25 : (min_dim >= 700 ? 21 : 15);
-                cv::Size lk_win_size(win_sz, win_sz);
-
-                float max_cyclic_drift = (min_dim >= 1000) ? 0.8f : (min_dim >= 700 ? 0.6f : 0.5f);
-                float cyclic_drift_sq = max_cyclic_drift * max_cyclic_drift;
-
-                float max_epipolar_dist = (min_dim >= 1000) ? 1.2f : (min_dim >= 700 ? 0.9f : 0.6f);
+                const int pyr_levels = 4;
+                const cv::Size lk_win_size(25, 25);
+                const float max_cyclic_drift = 0.8f;
+                const float cyclic_drift_sq = max_cyclic_drift * max_cyclic_drift;
+                const float max_epipolar_dist = 1.2f;
 
                 // Compute gradient magnitude for fast vectorized texture detection
                 cv::Mat grad_x, grad_y, grad_mag;

@@ -1021,6 +1021,7 @@ fun ArSplatCaptureDemo(onBack: () -> Unit) {
 
                             // Fast motion detection: angular velocity > 12 deg/s or linear velocity > 0.25 m/s (~1/3 off original 20 deg/s / 0.40 m/s)
                             val isTooFast = captureContext.smoothedAngularVelocity > 12.0f || captureContext.smoothedLinearVelocity > 0.25f
+                            val wasTooFast = isMovingTooFast
                             if (isMovingTooFast != isTooFast) {
                                 isMovingTooFast = isTooFast
                             }
@@ -1035,9 +1036,12 @@ fun ArSplatCaptureDemo(onBack: () -> Unit) {
                             val hasTimeElapsed = captureContext.lastTimestampNs == 0L ||
                                 (currentTimestampNs - captureContext.lastTimestampNs) >= 150_000_000L
                             
-                            // Gated capture: only trigger when there is sufficient displacement, elapsed time, AND camera is moving steadily
-                            if (hasDisplacement && hasTimeElapsed && !isTooFast) {
-                                val isRollingShutterRisk = if (captureContext.smoothedAngularVelocity > 10.0f) 1 else 0
+                            // Continuous capture with recovery trigger: capture continuously without freezing when fast, and immediately capture when slowing back down
+                            val isRecovery = wasTooFast && !isTooFast && hasDisplacement
+                            val shouldCapture = (hasDisplacement && hasTimeElapsed) || isRecovery
+
+                            if (shouldCapture) {
+                                val isRollingShutterRisk = if (isTooFast || captureContext.smoothedAngularVelocity > 10.0f) 1 else 0
                                 captureContext.lastPose = currentPose
                                 captureContext.lastTimestampNs = currentTimestampNs
 

@@ -171,7 +171,9 @@ public:
       if (cancel_) return;
       LOGI("Loaded and scored %zu frames in parallel", n_frames);
 
-      // Relative dataset thresholding (discard outliers below mu - 1.5 * sigma)
+      // Relative dataset thresholding & motion blur flagging (deferred to Phase 7 export)
+      std::vector<bool> export_keep_mask(n_frames, true);
+
       if (n_frames >= 8) {
           double sum = 0.0;
           for (size_t i = 0; i < n_frames; ++i) {
@@ -186,58 +188,30 @@ public:
           double std_sharpness = std::sqrt(sq_sum / n_frames);
           double threshold = std::max(0.0, mean_sharpness - 1.0 * std_sharpness);
 
-          std::vector<size_t> kept_indices;
           std::vector<size_t> rejected_indices;
           for (size_t i = 0; i < n_frames; ++i) {
-              if (sharpness_scores[i] >= threshold) {
-                  kept_indices.push_back(i);
-              } else {
+              if (sharpness_scores[i] < threshold || poses[i].is_rolling_shutter) {
                   rejected_indices.push_back(i);
               }
           }
 
-          // Safety guard: reject at most 25% of frames and keep at least 6 frames
-          size_t max_allowed_rejects = n_frames / 4;
-          if (rejected_indices.size() > max_allowed_rejects || kept_indices.size() < 6) {
+          // Safety guard: reject at most 30% of frames and keep at least 6 frames for export
+          size_t max_allowed_rejects = (n_frames * 3) / 10;
+          if (rejected_indices.size() > max_allowed_rejects || (n_frames - rejected_indices.size()) < 6) {
               std::sort(rejected_indices.begin(), rejected_indices.end(), [&](size_t a, size_t b) {
                   return sharpness_scores[a] > sharpness_scores[b];
               });
-              while ((rejected_indices.size() > max_allowed_rejects || kept_indices.size() < 6) && !rejected_indices.empty()) {
-                  kept_indices.push_back(rejected_indices.front());
+              while ((rejected_indices.size() > max_allowed_rejects || (n_frames - rejected_indices.size()) < 6) && !rejected_indices.empty()) {
                   rejected_indices.erase(rejected_indices.begin());
               }
-              std::sort(kept_indices.begin(), kept_indices.end());
           }
 
-          if (kept_indices.size() < n_frames) {
-              LOGI("Sharpness filter: mean=%.2f, std=%.2f, threshold=%.2f. Kept %zu/%zu frames (pruned %zu blurry outliers)",
-                   mean_sharpness, std_sharpness, threshold, kept_indices.size(), n_frames, n_frames - kept_indices.size());
-
-              std::vector<CameraPose> filtered_poses;
-              std::vector<std::string> filtered_names;
-              std::vector<cv::Mat> filtered_images;
-              std::vector<FrameInputMeta> filtered_metas;
-              filtered_poses.reserve(kept_indices.size());
-              filtered_names.reserve(kept_indices.size());
-              filtered_images.reserve(kept_indices.size());
-              filtered_metas.reserve(kept_indices.size());
-
-              for (size_t idx : kept_indices) {
-                  filtered_poses.push_back(poses[idx]);
-                  filtered_names.push_back(image_names[idx]);
-                  filtered_images.push_back(images[idx]);
-                  filtered_metas.push_back(frame_metas[idx]);
-              }
-
-              poses = std::move(filtered_poses);
-              image_names = std::move(filtered_names);
-              images = std::move(filtered_images);
-              frame_metas = std::move(filtered_metas);
-              n_frames = poses.size();
-          } else {
-              LOGI("Sharpness filter: mean=%.2f, std=%.2f, threshold=%.2f. All %zu frames are sharp.",
-                   mean_sharpness, std_sharpness, threshold, n_frames);
+          for (size_t idx : rejected_indices) {
+              export_keep_mask[idx] = false;
           }
+
+          LOGI("Quality check: mean_sharpness=%.2f, std=%.2f, threshold=%.2f. Marked %zu/%zu frames for export (pruning %zu blurry/fast frames at Phase 7)",
+               mean_sharpness, std_sharpness, threshold, n_frames - rejected_indices.size(), n_frames, rejected_indices.size());
       }
       const std::vector<CameraPose> arcore_poses = poses;
       
@@ -443,27 +417,14 @@ public:
        current_phase_ = 5;
        auto t_dense_start = std::chrono::steady_clock::now();
 
-       int adaptive_grid_step = 3;
-       float max_reproj = 1.5f;
-       if (!images.empty()) {
-           int min_dim = std::min(images[0].cols, images[0].rows);
-           if (min_dim <= 540) {        // 480p
-               adaptive_grid_step = 1;
-               max_reproj = 0.9f;
-           } else if (min_dim <= 800) { // 720p
-               adaptive_grid_step = 2;
-               max_reproj = 1.2f;
-           } else {                     // 1080p
-               adaptive_grid_step = 3;
-               max_reproj = 1.5f;
-           }
-       }
+       const int grid_step = 3;
+       const float max_reproj = 1.5f;
 
-       auto dense_candidates = dense_tracker_->trackAndTriangulate(images, arcore_poses, 1.2f, adaptive_grid_step, 8);
+       auto dense_candidates = dense_tracker_->trackAndTriangulate(images, arcore_poses, 1.2f, grid_step, 8);
        auto t_dense_end = std::chrono::steady_clock::now();
        LOGI("Phase 5 (Dense Guided Fill) took %lld ms (%zu candidates, step=%d)",
             (long long)std::chrono::duration_cast<std::chrono::milliseconds>(t_dense_end - t_dense_start).count(),
-            dense_candidates.size(), adaptive_grid_step);
+            dense_candidates.size(), grid_step);
 
        if (cancel_) return;
 
@@ -483,7 +444,28 @@ public:
        if (cancel_) return;
        current_phase_ = 7;
        auto t_export_start = std::chrono::steady_clock::now();
-       exporter_->exportNerfstudio(images, image_names, arcore_poses, final_points, output_dir, true);
+
+       // Filter out blurry and speed-exceeded frames for Gaussian Splatting training
+       std::vector<cv::Mat> export_images;
+       std::vector<std::string> export_names;
+       std::vector<CameraPose> export_poses;
+       export_images.reserve(images.size());
+       export_names.reserve(image_names.size());
+       export_poses.reserve(arcore_poses.size());
+
+       for (size_t i = 0; i < images.size(); ++i) {
+           if (i < export_keep_mask.size() && !export_keep_mask[i]) {
+               continue;
+           }
+           export_images.push_back(images[i]);
+           export_names.push_back(image_names[i]);
+           export_poses.push_back(arcore_poses[i]);
+       }
+
+       LOGI("Phase 7 (Export): exporting %zu clean frames (from %zu total) to transforms.json and %zu final points to points.ply",
+            export_poses.size(), arcore_poses.size(), final_points.size());
+
+       exporter_->exportNerfstudio(export_images, export_names, export_poses, final_points, output_dir, true);
        auto t_export_end = std::chrono::steady_clock::now();
        LOGI("Phase 7 (Export) took %lld ms",
             (long long)std::chrono::duration_cast<std::chrono::milliseconds>(t_export_end - t_export_start).count());

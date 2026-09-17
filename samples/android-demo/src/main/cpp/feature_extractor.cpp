@@ -67,54 +67,42 @@ std::vector<Keypoint> FeatureExtractor::extractFeatures(const cv::Mat& image) {
     int img_w = gray_f32.cols;
     int img_h = gray_f32.rows;
 
-    struct Tile {
-        cv::Rect rect;
-    };
-    std::vector<Tile> tiles;
-
-    int target_w = img_w;
-    int target_h = img_h;
-    cv::Mat gray_proc;
-
-    int max_dim = std::max(img_w, img_h);
-
-    if (max_dim <= 640) {
-        // 480p (e.g. 640x480): fits directly inside MODEL_W x MODEL_H
-        // Single tile: 1:1 direct native inference (2x faster, no upscaling blur)
-        gray_proc = gray_f32;
-        target_w = img_w;
-        target_h = img_h;
-        tiles.push_back({cv::Rect(0, 0, img_w, img_h)});
-    } else {
-        // Downscale full image to 720p HD using high-fidelity 8-tap Lanczos interpolation (§3.2)
-        target_w = (img_w >= img_h) ? 1280 : 720;
-        target_h = (img_w >= img_h) ? 720 : 1280;
-
-        if (img_w == target_w && img_h == target_h) {
-            gray_proc = gray_f32;
-        } else {
-            cv::resize(gray_f32, gray_proc, cv::Size(target_w, target_h), 0, 0, cv::INTER_LANCZOS4);
-        }
-
-        // 2 overlapping tiles in 720p space with an 80px overlap across the center seam
-        if (target_w >= target_h) {
-            // Landscape 1280x720: 2 tiles of size 680x720 (overlap in [600, 680])
-            int tile_w = 680;
-            tiles.push_back({cv::Rect(0, 0, tile_w, target_h)});
-            tiles.push_back({cv::Rect(target_w - tile_w, 0, tile_w, target_h)});
-        } else {
-            // Portrait 720x1280: 2 tiles of size 720x680 (overlap in [600, 680])
-            int tile_h = 680;
-            tiles.push_back({cv::Rect(0, 0, target_w, tile_h)});
-            tiles.push_back({cv::Rect(0, target_h - tile_h, target_w, tile_h)});
-        }
-    }
-
     const int MODEL_W = 640;
     const int MODEL_H = 480;
 
+    struct Tile {
+        cv::Rect rect;
+    };
+    
+    std::vector<Tile> tiles;
+    int max_dim = std::max(img_w, img_h);
+
+    if (max_dim <= 640) {
+        // 480p (640x480): direct 1:1 single tile (zero distortion, fastest)
+        tiles.push_back({cv::Rect(0, 0, img_w, img_h)});
+    } else if (img_w >= img_h) {
+        // Landscape (e.g. 720p: 1280x720, 1080p: 1920x1080)
+        // Option A: 2 isotropic 4:3 tiles with zero squashing (scale_x == scale_y)
+        int tile_h = img_h;
+        int tile_w = std::min(img_w, (img_h * MODEL_W) / MODEL_H); // 720p: 960 px, 1080p: 1440 px
+
+        if (tile_w >= img_w) {
+            tiles.push_back({cv::Rect(0, 0, img_w, img_h)});
+        } else {
+            // 2 tiles covering left [0, tile_w] and right [img_w - tile_w, img_w]
+            tiles.push_back({cv::Rect(0, 0, tile_w, tile_h)});
+            tiles.push_back({cv::Rect(img_w - tile_w, 0, tile_w, tile_h)});
+        }
+    } else {
+        // Portrait fallback
+        int step_h = img_h / 3;
+        tiles.push_back({cv::Rect(0, 0, img_w, step_h)});
+        tiles.push_back({cv::Rect(0, step_h, img_w, step_h)});
+        tiles.push_back({cv::Rect(0, step_h * 2, img_w, img_h - step_h * 2)});
+    }
+
     for (const auto& tile : tiles) {
-        cv::Mat roi = gray_proc(tile.rect);
+        cv::Mat roi = gray_f32(tile.rect);
         
         cv::Mat resized;
         if (roi.cols == MODEL_W && roi.rows == MODEL_H) {
@@ -198,15 +186,12 @@ std::vector<Keypoint> FeatureExtractor::extractFeatures(const cv::Mat& image) {
                     float px = static_cast<float>(x * 8 + dx);
                     float py = static_cast<float>(y * 8 + dy);
                     
-                    // Scale from MODEL_W x MODEL_H to 720p tile.rect, then to full image coordinates
-                    float pt_720_x = px * (static_cast<float>(tile.rect.width) / MODEL_W) + tile.rect.x;
-                    float pt_720_y = py * (static_cast<float>(tile.rect.height) / MODEL_H) + tile.rect.y;
-
-                    float scale_to_full_x = static_cast<float>(img_w) / target_w;
-                    float scale_to_full_y = static_cast<float>(img_h) / target_h;
-
+                    // Scale from MODEL_W x MODEL_H to tile.rect
+                    float scale_x = static_cast<float>(tile.rect.width) / MODEL_W;
+                    float scale_y = static_cast<float>(tile.rect.height) / MODEL_H;
+                    
                     Keypoint kp;
-                    kp.pt = cv::Point2f(pt_720_x * scale_to_full_x, pt_720_y * scale_to_full_y);
+                    kp.pt = cv::Point2f(px * scale_x + tile.rect.x, py * scale_y + tile.rect.y);
                     kp.response = rel_score * max_val;
                     
                     kp.descriptor.resize(64);
@@ -308,7 +293,7 @@ std::vector<Keypoint> FeatureExtractor::extractFeatures(const cv::Mat& image) {
         return a.response > b.response;
     });
 
-    LOGI("Extracted %zu raw keypoints, retained %zu keypoints across %dx%d grid (2-tile 720p Lanczos)", 
-         global_keypoints.size(), retained_keypoints.size(), GRID_COLS, GRID_ROWS);
+    LOGI("Extracted %zu raw keypoints, retained %zu keypoints across %dx%d grid (%zu isotropic 4:3 tiles)", 
+         global_keypoints.size(), retained_keypoints.size(), GRID_COLS, GRID_ROWS, tiles.size());
     return retained_keypoints;
 }
