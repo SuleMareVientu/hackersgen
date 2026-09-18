@@ -142,8 +142,8 @@ bool BundleAdjuster::optimize(
                 conf = std::max(0.1f, std::min(2.0f, confidences[i]));
             }
 
-            double weight_r = 100.0 * conf;
-            double weight_t = 100.0 * conf;
+            double weight_r = 150.0 * conf;
+            double weight_t = 200.0 * conf;
 
             ceres::CostFunction* prior_cost = PosePriorError::Create(
                 initial_r[i].data(), initial_t[i].data(), weight_r, weight_t);

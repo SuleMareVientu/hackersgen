@@ -111,6 +111,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.pm.ActivityInfo
 import android.util.Log
+import android.view.WindowManager
 
 object SplatCapturePipeline {
     init {
@@ -369,6 +370,16 @@ fun ArSplatCaptureDemo(onBack: () -> Unit) {
     }
 
     var isCapturing by remember { mutableStateOf(false) }
+
+    DisposableEffect(activity, isCapturing) {
+        val window = activity?.window
+        if (isCapturing) {
+            window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
     var isMovingTooFast by remember { mutableStateOf(false) }
     var warmupFrameCount by remember { mutableIntStateOf(0) }
     var isGenerating by remember { mutableStateOf(false) }

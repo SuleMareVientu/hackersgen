@@ -249,7 +249,7 @@ std::vector<Track> PointCloudFilter::fuseAndFilter(
     }
 
     // Retain up to MAX_POINTS_PER_VOXEL Tier 2 dense fill points per voxel (uniform 1.0-1.5mm pitch)
-    const size_t MAX_POINTS_PER_VOXEL = 4;
+    const size_t MAX_POINTS_PER_VOXEL = 2;
     for (auto& kv : voxel_buckets) {
         auto& indices = kv.second;
         // Prioritize points with more multi-view observations

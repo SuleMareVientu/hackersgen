@@ -404,13 +404,24 @@ public:
           auto t_tri_end = std::chrono::steady_clock::now();
           LOGI("Phase 3 (Triangulation) took %lld ms", (long long)std::chrono::duration_cast<std::chrono::milliseconds>(t_tri_end - t_tri_start).count());
           
-          // Bundle Adjustment (Structure-only refinement: lock camera poses as ARCore ground truth)
+          // Bundle Adjustment (Refining camera poses and 3D points via Ceres BA with ARCore metric priors)
           current_phase_ = 4;
           auto t_ba_start = std::chrono::steady_clock::now();
-          LOGI("Phase 4: Refining 3D points via Structure-Only BA (preserving ARCore ground-truth poses)...");
-          bundle_adjuster_->optimize(poses, tracks, best_ref_cam, confidences, 60, false);
+          LOGI("Phase 4: Refining camera poses & 3D points via Full BA (with ARCore metric priors)...");
+          bundle_adjuster_->optimize(poses, tracks, best_ref_cam, confidences, 60, true);
           auto t_ba_end = std::chrono::steady_clock::now();
           LOGI("Phase 4 (BA) took %lld ms", (long long)std::chrono::duration_cast<std::chrono::milliseconds>(t_ba_end - t_ba_start).count());
+
+          float max_t_shift = 0.0f, sum_t_shift = 0.0f;
+          for (size_t i = 0; i < poses.size(); ++i) {
+              float dt = static_cast<float>(cv::norm(poses[i].t - arcore_poses[i].t));
+              max_t_shift = std::max(max_t_shift, dt);
+              sum_t_shift += dt;
+          }
+          float mean_t_shift = poses.empty() ? 0.0f : (sum_t_shift / poses.size());
+          LOGI("Phase 4 (Ceres Camera Optimization): mean translation shift = %.2f mm, max = %.2f mm",
+               mean_t_shift * 1000.0f, max_t_shift * 1000.0f);
+
           if (cancel_) return;
 
        // Phase 5: Dense Guided Fill (§3.7)
@@ -420,7 +431,7 @@ public:
        const int grid_step = 3;
        const float max_reproj = 1.5f;
 
-       auto dense_candidates = dense_tracker_->trackAndTriangulate(images, arcore_poses, 1.2f, grid_step, 8);
+       auto dense_candidates = dense_tracker_->trackAndTriangulate(images, poses, 1.2f, grid_step, 8);
        auto t_dense_end = std::chrono::steady_clock::now();
        LOGI("Phase 5 (Dense Guided Fill) took %lld ms (%zu candidates, step=%d)",
             (long long)std::chrono::duration_cast<std::chrono::milliseconds>(t_dense_end - t_dense_start).count(),
@@ -431,7 +442,7 @@ public:
        // Phase 6: Multi-View Consistency Filter & Fusion/Thinning (§3.8, §3.9)
        current_phase_ = 6;
        auto t_filter_start = std::chrono::steady_clock::now();
-       auto consistent_dense = point_cloud_filter_->filterConsistency(dense_candidates, arcore_poses, 2, max_reproj);
+       auto consistent_dense = point_cloud_filter_->filterConsistency(dense_candidates, poses, 2, max_reproj);
        auto final_points = point_cloud_filter_->fuseAndFilter(tracks, consistent_dense, 0.0015f);
        auto t_filter_end = std::chrono::steady_clock::now();
        LOGI("Phase 6 (Consistency & Fusion) took %lld ms (%zu final points)",
@@ -451,7 +462,7 @@ public:
        std::vector<CameraPose> export_poses;
        export_images.reserve(images.size());
        export_names.reserve(image_names.size());
-       export_poses.reserve(arcore_poses.size());
+       export_poses.reserve(poses.size());
 
        for (size_t i = 0; i < images.size(); ++i) {
            if (i < export_keep_mask.size() && !export_keep_mask[i]) {
@@ -459,11 +470,11 @@ public:
            }
            export_images.push_back(images[i]);
            export_names.push_back(image_names[i]);
-           export_poses.push_back(arcore_poses[i]);
+           export_poses.push_back(poses[i]);
        }
 
        LOGI("Phase 7 (Export): exporting %zu clean frames (from %zu total) to transforms.json and %zu final points to points.ply",
-            export_poses.size(), arcore_poses.size(), final_points.size());
+            export_poses.size(), poses.size(), final_points.size());
 
        exporter_->exportNerfstudio(export_images, export_names, export_poses, final_points, output_dir, true);
        auto t_export_end = std::chrono::steady_clock::now();
