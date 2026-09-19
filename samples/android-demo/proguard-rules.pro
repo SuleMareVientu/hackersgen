@@ -21,8 +21,8 @@
 -keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
 
 # ── Kotlin ────────────────────────────────────────────────────────────────────
--keep class kotlin.Metadata { *; }
 -dontwarn kotlin.**
+-dontwarn kotlin.Metadata
 
 # ── Jetpack Compose ───────────────────────────────────────────────────────────
 -dontwarn androidx.compose.**

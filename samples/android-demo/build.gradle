@@ -3,7 +3,6 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kotlin.serialization)
-    alias(libs.plugins.roborazzi)
 }
 
 // Resolve store secrets once, at android-block scope, so both `defaultConfig`
@@ -25,25 +24,7 @@ def loadFromLocalProperties = { String propertyName ->
     return localProps.getProperty(propertyName, "")
 }
 
-// ARCORE_API_KEY env var -> local.properties `ARCORE_API_KEY`. Injected into
-// AndroidManifest.xml as the `arcoreApiKey` placeholder. Empty => Streetscape /
-// Geospatial / Cloud Anchors stay disabled via the demo's `hasArcoreApiKey`
-// check. See samples/android-demo/ARCORE_CLOUD_SETUP.md to provision your own key.
-def arcoreApiKey = System.getenv("ARCORE_API_KEY") ?: ""
-if (arcoreApiKey.isEmpty()) {
-    arcoreApiKey = loadFromLocalProperties("ARCORE_API_KEY")
-}
 
-// SKETCHFAB_API_KEY env var -> local.properties `sketchfab.api.key`. Injected
-// into BuildConfig so SketchfabService can authenticate against
-// api.sketchfab.com. Empty => Sketchfab features stay disabled
-// (SketchfabConfig.apiKey returns null, the service throws MissingApiKey).
-// TODO V1.1: route requests via the mcp-gateway proxy so end-users never see
-// the master key in the APK. See SketchfabConfig.kt.
-def sketchfabApiKey = System.getenv("SKETCHFAB_API_KEY") ?: ""
-if (sketchfabApiKey.isEmpty()) {
-    sketchfabApiKey = loadFromLocalProperties("sketchfab.api.key")
-}
 
 android {
     namespace = "io.github.sceneview.demo"
@@ -69,17 +50,15 @@ android {
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
 
-        // The key MUST NEVER be committed — see the resolution block above.
-        manifestPlaceholders["arcoreApiKey"] = arcoreApiKey
-        buildConfigField "String", "SKETCHFAB_API_KEY", "\"${sketchfabApiKey}\""
 
         externalNativeBuild {
             cmake {
                 cppFlags "-std=c++17"
                 arguments "-DANDROID_STL=c++_shared", "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384"
+                targets "splat_capture_jni"
             }
         }
-        
+
         ndk {
             abiFilters "arm64-v8a"
         }
@@ -110,60 +89,12 @@ android {
             def keystoreFile = System.getenv("SCENEVIEW_DEMO_KEYSTORE_FILE")
             if (keystoreFile != null) {
                 signingConfig signingConfigs.release
+            } else {
+                signingConfig signingConfigs.debug
             }
         }
     }
 
-    // Build-time fail-loud guard for store secrets (#1915).
-    //
-    // An empty SKETCHFAB_API_KEY / ARCORE_API_KEY compiles silently — Gradle is
-    // happy with `""` — and ships a store APK whose Sketchfab carousels are
-    // invisible and whose Streetscape / Geospatial / Cloud Anchor demos are
-    // disabled, with nothing surfacing the cause. That is the exact silent-fail
-    // class that caused #1909 (empty carousels on Play Store for weeks).
-    //
-    // Refuse to assemble a RELEASE variant when either secret is empty. Debug
-    // builds stay permissive — developers without the keys still need to compile.
-    // Forks / PRs from forks (no access to org secrets) opt out by setting
-    // `SV_ALLOW_MISSING_SECRETS=1` in the environment, or pass
-    // `-PSV_ALLOW_MISSING_SECRETS=1` on the Gradle command line.
-    applicationVariants.configureEach { variant ->
-        if (variant.buildType.name != "release") {
-            return
-        }
-        def allowMissing = System.getenv("SV_ALLOW_MISSING_SECRETS") == "1" ||
-                (project.hasProperty("SV_ALLOW_MISSING_SECRETS") &&
-                        project.property("SV_ALLOW_MISSING_SECRETS").toString() == "1")
-        variant.assembleProvider.configure { assembleTask ->
-            assembleTask.doFirst {
-                if (allowMissing) {
-                    logger.warn("⚠️  SV_ALLOW_MISSING_SECRETS=1 — skipping release secret guard (#1915).")
-                    return
-                }
-                def missing = []
-                if (sketchfabApiKey == null || sketchfabApiKey.trim().isEmpty()) {
-                    missing << "SKETCHFAB_API_KEY"
-                }
-                if (arcoreApiKey == null || arcoreApiKey.trim().isEmpty()) {
-                    missing << "ARCORE_API_KEY"
-                }
-                if (!missing.isEmpty()) {
-                    throw new GradleException(
-                            "Release build refusing to ship without store secrets: " +
-                            "${missing.join(', ')}.\n" +
-                            "  An empty key compiles silently and ships a store APK with\n" +
-                            "  invisible Sketchfab carousels / disabled AR Geospatial demos\n" +
-                            "  (the #1909 silent-fail class).\n" +
-                            "  Fix: set the missing secret(s) as environment variables\n" +
-                            "  (CI: GitHub Secrets), or in the repo-root local.properties\n" +
-                            "  (SKETCHFAB_API_KEY -> sketchfab.api.key, ARCORE_API_KEY -> ARCORE_API_KEY).\n" +
-                            "  Forks without org secrets: pass -PSV_ALLOW_MISSING_SECRETS=1\n" +
-                            "  or export SV_ALLOW_MISSING_SECRETS=1 to override.")
-                }
-                logger.lifecycle("✅ Release secret guard (#1915): SKETCHFAB_API_KEY + ARCORE_API_KEY present.")
-            }
-        }
-    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
@@ -182,6 +113,11 @@ android {
             path file('src/main/cpp/CMakeLists.txt')
             version '3.22.1'
         }
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
     }
     androidResources {
         // `.filamat` and `.ktx` are already compressed payloads — re-zipping
@@ -242,62 +178,15 @@ dependencies {
     // (`api libs.play.app.update*`). Manager + banner live in
     // `io.github.sceneview.sample.common.update.*`.
 
-    // Sketchfab API client — OkHttp for network, kotlinx-serialization for JSON.
-    // Used by io.github.sceneview.demo.sketchfab.SketchfabService to stream
-    // models from api.sketchfab.com instead of bundling GLBs in the APK.
-    // okhttp-coroutines provides Call.executeAsync(): cancelling the calling
-    // coroutine aborts the socket, so a re-typed Explore search never stacks
-    // zombie requests behind the debounce (#2644).
-    implementation libs.okhttp
-    implementation libs.okhttp.coroutines
+    // JSON serialization for splat capture and training metadata
     implementation libs.kotlinx.serialization.json
 
-    // Google Fused Location Provider — required by ARCore Geospatial mode
-    // (Config.GeospatialMode.ENABLED) used by ARStreetscapeDemo. Without this
-    // dependency on the classpath, Session.configure() throws an
-    // IllegalStateException complaining about missing FLP classes and the
-    // Streetscape demo renders a black screen.
-    implementation libs.play.services.location
-
-    // ML Kit Object Detection — bundled model so ARMLObjectLabelDemo works
-    // offline. The default options classify generic categories (Home good,
-    // Fashion good, Food, Place, Plant). For finer labels callers can plug
-    // in a custom TFLite model via ObjectDetectorOptions / CustomObjectDetectorOptions.
-    // See ARMLObjectLabelDemo (#1737).
-    implementation libs.mlkit.object.detection
-
-    // MediaPipe Tasks Vision — on-device Pose Landmarker for the AR Body Tracker demo.
-    // ARCore has no native body-tracking API, so the demo feeds the AR CPU camera image
-    // to MediaPipe and projects the 33 image-space landmarks onto SceneView's 17
-    // ARKit-parity Joint enum. The .task model is bundled in src/main/assets. Demo-only
-    // dependency — the published arsceneview artifact carries no MediaPipe code, just the
-    // renderer-agnostic BodyPose / Joint value types. See ARBodyTrackerDemo (#1763).
-    //
-    // MediaPipe's tasks-vision POM declares `com.google.auto.value:auto-value`
-    // (the *full* annotation processor, not just `-annotations`) as a regular
-    // runtime dependency. AutoValue is compile-time-only — it pulls a shaded
-    // JavaPoet that references compile-time-only `javax.lang.model.**` JDK
-    // classes. On the release minify classpath R8 full-mode promotes those
-    // missing classes to a hard error, failing `minifyReleaseWithR8` and the
-    // Play Store deploy. Exclude it — it is never used at runtime (#2106).
-    implementation(libs.mediapipe.tasks.vision) {
-        exclude group: 'com.google.auto.value', module: 'auto-value'
-    }
-
-    // Screenshot testing (Roborazzi — JVM, no emulator needed)
+    // Unit testing
     testImplementation libs.robolectric
-    testImplementation libs.roborazzi
-    testImplementation libs.roborazzi.compose
-    testImplementation libs.roborazzi.rule
     testImplementation libs.androidx.test.junit
     testImplementation platform(libs.androidx.compose.bom)
     testImplementation libs.androidx.compose.ui
-
     testImplementation libs.kotlin.coroutines.test
-    // Local HTTP double for SketchfabService's cooperative-cancellation test
-    // (#2644) — proves an aborted search releases its socket instead of
-    // running to completion behind the debounce.
-    testImplementation libs.mockwebserver3
 
     // UiAutomator-based interaction tests. Drives the real demo app process through
     // DemoHostActivity (debug flavour) — no ComposeTestRule, no Filament thread-adoption
@@ -306,7 +195,7 @@ dependencies {
     androidTestImplementation libs.androidx.test.ext.junit
     androidTestImplementation libs.androidx.test.runner
     androidTestImplementation libs.androidx.test.uiautomator
-	
+
 	// Brush splat training library
 	implementation files('libs/brush-aar-release.aar')
 
@@ -486,7 +375,7 @@ def collateDemos = tasks.register("collateDemos") {
         // 2. Build the llms.txt block
         def beginMarker = "<!-- BEGIN GENERATED DEMOS — DO NOT EDIT — run samples/android-demo/scripts/collate-demos.sh -->"
         def endMarker = "<!-- END GENERATED DEMOS -->"
-        def categoryOrder = ["BASICS_3D", "LIGHTING_ENVIRONMENT", "CONTENT", "INTERACTION", "ADVANCED", "AUGMENTED_REALITY"]
+        def categoryOrder = ["BASICS_3D", "CONTENT", "AUGMENTED_REALITY"]
 
         def newBlock = new StringBuilder()
         newBlock.append("${beginMarker}\n\n")

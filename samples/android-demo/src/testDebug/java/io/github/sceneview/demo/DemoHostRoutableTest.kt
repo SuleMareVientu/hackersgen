@@ -9,7 +9,7 @@ import org.junit.Test
  * Pure-JVM guard that **every [ALL_DEMOS] id is routable by [DemoHostActivity]**.
  *
  * [DemoHostActivity] is the debug-only deep-link host that instrumentation tests
- * ([DemoInteractionTest], [DemoSmokeTest]) and the manual `--es demo_id <id>` QA channel use to
+ * ([SplatPipelineLaunchTest]) and the manual `--es demo_id <id>` QA channel use to
  * launch a single demo composable directly. Before #2320 it hand-maintained a `when (id)` mapping
  * ids to composables; a demo that was in the catalog ([ALL_DEMOS]) but missing a branch crashed the
  * harness with `error("Unknown demo id")`. [#2319](https://github.com/sceneview/sceneview/issues/2319)
@@ -55,23 +55,8 @@ class DemoHostRoutableTest {
     }
 
     @Test
-    fun `every retired-id alias is routable`() {
-        // Retired deep-link ids (e.g. `multi-model`, `text`, `gesture-editing`) must keep
-        // resolving through the host, exactly as they do through the main-app DemoRouter — old
-        // `sceneview://demo/<id>` links and QA scripts referencing the pre-consolidation ids
-        // must not crash the host.
-        val unrouteableAliases = DeepLinkRouter.DEMO_ID_ALIASES.keys
-            .filter { DemoHostActivity.routableId(it) == null }
-        assertTrue(
-            "These retired-id aliases no longer route through DemoHostActivity (their " +
-                "consolidation target may have been removed): $unrouteableAliases",
-            unrouteableAliases.isEmpty(),
-        )
-    }
-
-    @Test
     fun `an unknown demo id is not routable`() {
-        // Negative-space guard: a string that is neither a registered id nor a known alias must
+        // Negative-space guard: a string that is not a registered id must
         // resolve to null (the host then errors loudly) — so the guard genuinely guards and does
         // not vacuously pass by routing everything.
         assertNull(DemoHostActivity.routableId("definitely-not-a-real-demo"))

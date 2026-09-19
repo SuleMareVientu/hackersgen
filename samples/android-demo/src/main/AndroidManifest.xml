@@ -17,26 +17,6 @@
          button can vibrate (#1901 phase 1). When absent, every haptic call
          becomes a silent no-op + one Log.d. -->
     <uses-permission android:name="android.permission.VIBRATE" />
-    <!-- Required by the Streetscape Geometry / Geospatial demos (3 of 35). ARCore
-         throws FineLocationPermissionNotGrantedException if Geospatial mode is
-         enabled without this permission — the demo composable requests it at
-         runtime before configuring the session, only on screens that need it.
-         The other 32 demos never trigger the runtime prompt.
-
-         Pair the permission with android:required="false" on the GPS feature so
-         the Play Store filter doesn't narrow the install audience to GPS-equipped
-         devices, and so reviewers see "uses precise location only when used"
-         rather than "always". (#891) -->
-    <!-- ACCESS_COARSE_LOCATION is required alongside FINE on API 31+ (CoarseFineLocation lint). -->
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <uses-feature
-        android:name="android.hardware.location.gps"
-        android:required="false" />
-    <uses-feature
-        android:name="android.hardware.location"
-        android:required="false" />
-
     <!-- Required for PermissionImpliesUnsupportedChromeOsHardware lint rule -->
     <uses-feature
         android:name="android.hardware.camera"
@@ -65,21 +45,10 @@
             android:name="com.google.ar.core"
             android:value="optional" />
 
-        <!-- ARCore Cloud API key — required for Geospatial, Streetscape Geometry,
-             and Cloud Anchors. Injected from local.properties (or the ARCORE_API_KEY
-             env var) at build time via the manifestPlaceholders in build.gradle.
-             Empty by default — when blank, the demo's runtime check disables the
-             features that need it and shows a clear status message instead of
-             crashing. See samples/android-demo/ARCORE_CLOUD_SETUP.md. -->
-        <meta-data
-            android:name="com.google.android.ar.API_KEY"
-            android:value="${arcoreApiKey}" />
-
-        <!-- FileProvider — surfaces app-private external storage (notably
-             `getExternalFilesDir("ar-recordings")`) as content:// URIs for
-             ACTION_SEND share intents. Used by ARRecordPlaybackDemo's
-             Share button. The authority is namespaced with `.fileprovider`
-             so it never collides with other modules' providers. -->
+        <!-- FileProvider — surfaces cache files (feedback screenshots)
+             as content:// URIs for ACTION_SEND share intents. The authority
+             is namespaced with `.fileprovider` so it never collides with
+             other modules' providers. -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

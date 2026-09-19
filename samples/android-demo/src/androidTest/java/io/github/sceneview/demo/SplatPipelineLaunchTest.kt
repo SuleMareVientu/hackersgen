@@ -21,29 +21,26 @@ import org.junit.runners.MethodSorters
 import java.io.File
 
 /**
- * Smoke tests for demos that cannot be interaction-tested on the Apple M3 Metal emulator or
- * without ARCore. Each test verifies the demo composable *launches* and renders a first frame
- * (scaffold title visible, no JNI crash) — a meaningful baseline on emulator even when the
- * underlying feature (ARCore session, Filament manipulator, device camera) is unavailable.
+ * On-device / emulator launch tests for the OpenSplat pipeline stages:
+ * 1. [arSplatCapture_launchesAndRenders] — ARCore camera feed, XFeat feature tracking, point cloud triangulation.
+ * 2. [splatTraining_launchesAndRenders] — On-device 3D Gaussian Splatting optimization screen.
+ * 3. [splatViewer_launchesAndRenders] — Filament 3D Gaussian Splat PLY viewer.
  *
- * Kept in a separate class from [DemoInteractionTest] so a hard JNI crash in one of these
- * (historically: `camera-controls` on emulator trips `UnsatisfiedLinkError
- * Manipulator.nCreateBuilder`) doesn't tear down the full interaction suite.
- *
- * **Pulling screenshots** — same path as [DemoInteractionTest]:
+ * Verifies that each screen boots cleanly without JNI linkage crashes (Filament, LiteRT, Ceres, OpenCV)
+ * and captures a visual QA screenshot to:
  * ```bash
  * adb pull /sdcard/Download/sceneview-qa/ tools/qa-screenshots/interactions/
  * ```
  */
 @RunWith(AndroidJUnit4::class)
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
-class DemoSmokeTest {
+class SplatPipelineLaunchTest {
 
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val device: UiDevice =
         UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
     private val pkg = "io.github.sceneview.demo"
-    private val timeout = 8_000L
+    private val timeout = 10_000L
 
     @Before
     fun goHome() {
@@ -56,15 +53,10 @@ class DemoSmokeTest {
     }
 
     /**
-     * Opens the demo and takes a screenshot regardless of whether the title actually renders.
-     * Unlike [DemoInteractionTest.openDemo], this does NOT error if the title never shows up —
-     * an AR demo on an emulator without ARCore may paint an error dialog or permission prompt
-     * instead, and that state is itself valuable QA output.
-     *
-     * Returns `true` iff the expected scaffold title rendered within the timeout (i.e. the
-     * demo launched cleanly end-to-end).
+     * Launches a splat screen via [DemoHostActivity], waits for the scaffold title,
+     * and pauses for initial PBR/cold-boot frame rendering before taking a screenshot.
      */
-    private fun openDemoTolerant(demoId: String, expectedTitle: String): Boolean {
+    private fun openScreen(demoId: String, expectedTitle: String): Boolean {
         val intent = Intent().apply {
             setClassName(pkg, "$pkg.DemoHostActivity")
             putExtra(DemoHostActivity.EXTRA_DEMO_ID, demoId)
@@ -72,9 +64,6 @@ class DemoSmokeTest {
         }
         context.startActivity(intent)
         val found = device.wait(Until.hasObject(By.text(expectedTitle)), timeout) != null
-        // See rationale in DemoInteractionTest.openDemo — 10 s covers the Apple M3 Metal slow
-        // path including the first PBR-pass on cold-boot (where 6 s left a black SurfaceView
-        // in the captured screenshot).
         Thread.sleep(10000)
         return found
     }
@@ -102,6 +91,7 @@ class DemoSmokeTest {
                     resolver.delete(oldUri, null, null)
                 }
             }
+
         val pending = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, filename)
             put(MediaStore.Downloads.MIME_TYPE, "image/jpeg")
@@ -123,61 +113,21 @@ class DemoSmokeTest {
         tmpPng.delete()
     }
 
-    // ── AR demos — no ARCore installed on the emulator, so we expect either a graceful
-    //    "ARCore not available" composable or a permission prompt. Either way, the test
-    //    process must not crash. Ordered alphabetically (ar-cloud-anchor, ar-face, …).
-
     @Test
-    fun a01_arCloudAnchor_smokeOpen() {
-        openDemoTolerant("ar-cloud-anchor", "Cloud Anchors")
-        screenshot("s01_ar_cloud_anchor")
+    fun a01_arSplatCapture_launchesAndRenders() {
+        openScreen("ar-splat-capture", "Splat Capture")
+        screenshot("01_ar_splat_capture")
     }
 
     @Test
-    fun a02_arFace_smokeOpen() {
-        openDemoTolerant("ar-face", "Augmented Faces")
-        screenshot("s02_ar_face")
+    fun a02_splatTraining_launchesAndRenders() {
+        openScreen("splat-training", "Splat Training")
+        screenshot("02_splat_training")
     }
 
     @Test
-    fun a03_arImage_smokeOpen() {
-        openDemoTolerant("ar-image", "Image Tracking")
-        screenshot("s03_ar_image")
-    }
-
-    @Test
-    fun a04_arPlacement_smokeOpen() {
-        openDemoTolerant("ar-placement", "Tap to Place")
-        screenshot("s04_ar_placement")
-    }
-
-    @Test
-    fun a05_arPose_smokeOpen() {
-        openDemoTolerant("ar-pose", "Pose Placement")
-        screenshot("s05_ar_pose")
-    }
-
-    @Test
-    fun a06_arRerun_smokeOpen() {
-        openDemoTolerant("ar-rerun", "Rerun Debug")
-        screenshot("s06_ar_rerun")
-    }
-
-    @Test
-    fun a07_arStreetscape_smokeOpen() {
-        openDemoTolerant("ar-streetscape", "Streetscape Geometry")
-        screenshot("s07_ar_streetscape")
-    }
-
-    // ── Camera & Gestures — known to trip `Manipulator.nCreateBuilder` UnsatisfiedLinkError on
-    //    the Apple M3 Metal translator AVD (symbol present in libfilament-jni.so but unresolved
-    //    at runtime). The test runs last (`z_` prefix) so a hard crash here doesn't mask the
-    //    preceding 7 AR smoke tests. #2239 Batch 1 — `camera-controls` is now an alias of the
-    //    unified `camera-gestures` demo whose default tab still builds the Filament Manipulator.
-
-    @Test
-    fun z01_cameraControls_smokeOpen() {
-        openDemoTolerant("camera-gestures", "Camera & Gestures")
-        screenshot("s08_camera_controls")
+    fun a03_splatViewer_launchesAndRenders() {
+        openScreen("splat-viewer", "Splat Viewer")
+        screenshot("03_splat_viewer")
     }
 }

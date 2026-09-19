@@ -101,23 +101,7 @@ class MainActivity : ComponentActivity() {
         // app on the device could flip it on once via `--ez qa_mode true` and leave the
         // showcase frozen until process death.
         DemoSettings.qaMode = intent?.getBooleanExtra("qa_mode", false) ?: false
-        // Optional path to an ARCore playback fixture (.mp4). Confined to the app's own
-        // external-files dir so a malicious deep link can't probe arbitrary device paths
-        // (`/data/data/...`, photos, configs). The path is consumed once by
-        // `ARRecordPlaybackDemo` then nulled.
-        DemoSettings.arPendingPlaybackFile = intent?.getStringExtra("ar_playback_file")
-            ?.takeIf { isWithinAppFilesDir(it) }
-        // Optional camera-to-model distance (zoom level). Maestro has no pinch gesture, so
-        // the device-QA flows drive 3D zoom by deep link instead (#1571). Same dual-ingress
-        // policy: the `camera_distance` QA extra (any Bundle type — Float from `adb --ef`,
-        // String from Maestro launchApp arguments, #2652) wins over the URL query parameter.
-        // Both go through the DeepLinkRouter clamp, so a non-finite, unparseable, or
-        // out-of-range value is dropped to null (default framing) rather than crashing.
         DemoSettings.cameraDistance = resolveCameraDistance(intent)
-        // Optional initial tab for a consolidated (segmented-button) demo. Set from the alias
-        // that opened it (`--es demo shape` → Shape tab) or an explicit `--es tab <i>` extra /
-        // `?tab=<id|index>` query. Absent / unparseable → null (demo keeps its default tab).
-        DemoSettings.initialTab = resolveInitialTab(intent)
         setContent {
             SceneViewDemoTheme {
                 SceneViewDemoApp(activity = this)
@@ -136,29 +120,9 @@ class MainActivity : ComponentActivity() {
         pendingDemoId.value = DeepLinkRouter.validate(intent.getStringExtra("demo"))
             ?: DeepLinkRouter.parse(intent.data)
         DemoSettings.qaMode = intent.getBooleanExtra("qa_mode", false)
-        DemoSettings.arPendingPlaybackFile = intent.getStringExtra("ar_playback_file")
-            ?.takeIf { isWithinAppFilesDir(it) }
         DemoSettings.cameraDistance = resolveCameraDistance(intent)
-        DemoSettings.initialTab = resolveInitialTab(intent)
     }
 
-    /**
-     * Resolves the optional initial tab a consolidated demo should pre-select from an
-     * incoming intent (#2315). Mirrors the `demo` / `camera_distance` dual-ingress policy:
-     * the `--es tab <v>` QA extra wins over the `?tab=<v>` URL query, and both fall back to
-     * the alias that launched the demo (`--es demo shape` → the Shape tab of
-     * `custom-geometry`). [DeepLinkRouter.resolveInitialTab] owns the precedence + parsing;
-     * an absent / unparseable value resolves to `null` so the demo keeps its default first
-     * tab and never crashes on a bad index.
-     */
-    private fun resolveInitialTab(intent: Intent?): Int? {
-        if (intent == null) return null
-        val rawId = intent.getStringExtra("demo")
-            ?: intent.data?.let(DeepLinkRouter::extractCandidate)
-        val tabParam = intent.getStringExtra(DeepLinkRouter.QUERY_PARAM_TAB)
-            ?: DeepLinkRouter.parseTabParam(intent.data)
-        return DeepLinkRouter.resolveInitialTab(rawId, tabParam)
-    }
 
     /**
      * Resolves the optional camera-to-model distance (zoom level) from an incoming intent.
@@ -194,20 +158,6 @@ class MainActivity : ComponentActivity() {
         pendingDemoId.value = null
     }
 
-    /**
-     * Returns `true` if the given path is inside this app's external-files directory
-     * (the only location where AR fixtures legitimately live). Anything else — system
-     * paths, other apps' data, photos, downloads — gets rejected. Without this guard,
-     * any app on the device could craft a deep link with `--es ar_playback_file <path>`
-     * and trick the demo into opening arbitrary files (Logcat would log the path,
-     * leaking it). MP4 parsing itself is safe (ARCore rejects non-datasets), but
-     * defence-in-depth.
-     */
-    private fun isWithinAppFilesDir(path: String): Boolean {
-        val base = getExternalFilesDir(null)?.absolutePath ?: return false
-        val canonical = runCatching { java.io.File(path).canonicalPath }.getOrNull() ?: return false
-        return canonical.startsWith(base)
-    }
 
     override fun onResume() {
         super.onResume()
@@ -245,8 +195,7 @@ fun SceneViewDemoApp(activity: MainActivity? = null) {
         val id = pendingId ?: return@LaunchedEffect
         // If the cold-start `initialDemo` already matches `pendingId`, NavHost picked the
         // demo as its start destination — navigating here would push a SECOND instance,
-        // destroying the first one's remember{} state (and any one-shot flags like
-        // `DemoSettings.arPendingPlaybackFile` that were already consumed). Just clear
+        // destroying the first one's remember{} state. Just clear
         // the pending id so config changes don't replay it.
         if (id != initialDemo) {
             navController.navigate("demo/$id")

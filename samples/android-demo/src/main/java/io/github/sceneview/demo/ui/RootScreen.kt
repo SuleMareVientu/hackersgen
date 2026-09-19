@@ -69,47 +69,24 @@ import io.github.sceneview.demo.DemoListScreen
 import io.github.sceneview.demo.R
 import io.github.sceneview.demo.feedback.DriveFeedbackChipReveal
 import io.github.sceneview.demo.feedback.FEEDBACK_FAB_RESERVED_SPACE
-import io.github.sceneview.demo.ui.explore.ExploreTabScreen
 
 /**
- * Top-level UI scaffold. Hosts the four primary tabs (Explore, AR View,
- * Samples, About) under a single M3 [NavigationBar]. The Explore tab
- * (live Sketchfab catalog) is the default landing experience — it's the
- * highest-conversion surface for new users.
- *
- * Routing back into the existing per-demo screens is delegated to the
- * caller via [onDemoClick] — this composable does not own the NavHost so
- * deep-link replay (`sceneview://demo/<id>`) keeps working unchanged.
+ * Top-level UI scaffold hosting the OpenSplat demos and About tab.
  */
 @Composable
 fun RootScreen(onDemoClick: (String) -> Unit) {
-    var selectedTab by rememberSaveable { mutableStateOf(RootTab.Explore) }
-    // Tracks whether the AR View tab is in a live camera session. When `true`
-    // the bottom NavigationBar is hidden so the AR camera goes truly
-    // fullscreen — pre-#2238 the nav bar always stayed visible and ate ~90 px
-    // of the live camera viewport. ArViewTabContent invokes the setter
-    // whenever its internal `sessionStarted` flag flips (start / exit / back
-    // gesture). The flag is intentionally NOT rememberSaveable: a config
-    // change or process death should land the user back on the launcher
-    // screen with the nav bar visible, not on an orphaned immersive shell.
-    var arSessionActive by remember { mutableStateOf(false) }
+    var selectedTab by rememberSaveable { mutableStateOf(RootTab.Samples) }
 
     Scaffold(
         bottomBar = {
-            // Conditional rendering rather than just `visible = !arSessionActive`
-            // because the bottomBar slot reserves layout space when present —
-            // hiding it via Modifier.alpha or visibility would still steal ~90 px
-            // from the live AR camera viewport (#2238).
-            if (!arSessionActive) {
-                NavigationBar {
-                    RootTab.entries.forEach { tab ->
-                        NavigationBarItem(
-                            selected = selectedTab == tab,
-                            onClick = { selectedTab = tab },
-                            icon = { Icon(tab.icon, contentDescription = null) },
-                            label = { Text(stringResource(tab.labelRes)) },
-                        )
-                    }
+            NavigationBar {
+                RootTab.entries.forEach { tab ->
+                    NavigationBarItem(
+                        selected = selectedTab == tab,
+                        onClick = { selectedTab = tab },
+                        icon = { Icon(tab.icon, contentDescription = null) },
+                        label = { Text(stringResource(tab.labelRes)) },
+                    )
                 }
             }
         },
@@ -120,15 +97,10 @@ fun RootScreen(onDemoClick: (String) -> Unit) {
                 .padding(padding),
         ) {
             when (selectedTab) {
-                RootTab.Explore -> ExploreTabScreen(
-                    curatedSamples = curatedSamplesForExplore(),
-                    onSampleClick = { sample -> onDemoClick(sample.id) },
-                )
-                RootTab.ArView -> ArViewTabContent(
+                RootTab.Samples -> DemoListScreen(
                     onDemoClick = onDemoClick,
-                    onSessionActiveChange = { arSessionActive = it },
+                    onAboutClick = { selectedTab = RootTab.About },
                 )
-                RootTab.Samples -> DemoListScreen(onDemoClick = onDemoClick)
                 RootTab.About -> AboutTabContent()
             }
         }
@@ -136,50 +108,17 @@ fun RootScreen(onDemoClick: (String) -> Unit) {
 }
 
 enum class RootTab(@StringRes val labelRes: Int, val icon: ImageVector) {
-    Explore(R.string.tab_explore, Icons.Filled.Search),
-    ArView(R.string.tab_ar_view, Icons.Filled.ViewInAr),
     Samples(R.string.tab_samples, Icons.Filled.PlayArrow),
     About(R.string.tab_about, Icons.Filled.Info),
 }
 
 /**
- * Curated subset of [ALL_DEMOS] surfaced in the "Try a sample" carousel.
- * Hand-picked across categories so the carousel feels diverse on first
- * launch — same intent as the iOS `featuredModels` list.
- */
-private fun curatedSamplesForExplore(): List<DemoEntry> {
-    val ids = listOf(
-        "model-viewer",
-        "geometry",
-        "lighting",
-        "ar-placement",
-        // #2239 Batch 5 — `multi-model` consolidated into `model-viewer` (already
-        // first in this list). Repointed to the live `materials` umbrella so the
-        // carousel keeps its 6-card diversity rather than silently shrinking when
-        // a retired id is dropped by `mapNotNull` (the Batch 3 footgun).
-        "materials",
-        // #2239 Batch 3 — `animation` consolidated into `animation-physics`.
-        "animation-physics",
-    )
-    return ids.mapNotNull { id -> ALL_DEMOS.firstOrNull { it.id == id } }
-}
-
-/**
- * About tab — M3 Expressive card layout that mirrors the iOS [AboutTab] structure:
- * hero card (cube icon + version pill + tagline), a column of tappable info cards
- * (Open Source, Docs, GitHub, 3D Playground, Sponsor, Credits), a "Star on GitHub"
- * primary button, and a footer.
- *
- * Pre-2026-05-11 this tab was 4 plain `Text` lines (QA finding "About tab is stark").
- * Mirroring the iOS layout brings the two platforms to visual + content parity.
+ * About tab — M3 Expressive card layout.
  */
 @Composable
 private fun AboutTabContent() {
     val context = LocalContext.current
     val openLink: (String) -> Unit = { url ->
-        // Devices without a browser (Android Go, stripped AOSP, user uninstalled
-        // Chrome) throw ActivityNotFoundException → app crashes. runCatching +
-        // toast keeps the app alive and tells the user why nothing happened. #1208
         runCatching {
             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
         }.onFailure {
@@ -189,12 +128,6 @@ private fun AboutTabContent() {
                 android.widget.Toast.LENGTH_LONG
             ).show()
         }
-    }
-    // #1152 Stage 3 — CC-BY attribution for every streamed Sketchfab model
-    // surfaces as a ModalBottomSheet anchored to the existing "Credits" card.
-    var showCreditsSheet by rememberSaveable { mutableStateOf(false) }
-    if (showCreditsSheet) {
-        CreditsSheet(onDismiss = { showCreditsSheet = false })
     }
 
     // Hide the floating feedback chip at rest (it masks the Sponsor card) and
@@ -255,14 +188,6 @@ private fun AboutTabContent() {
             subtitle = stringResource(R.string.about_card_sponsor_subtitle),
             trailingIcon = Icons.AutoMirrored.Filled.OpenInNew,
             onClick = { openLink("https://github.com/sponsors/sceneview") },
-        )
-        AboutInfoCard(
-            icon = Icons.Filled.Group,
-            iconColor = Color(0xFF26A69A),
-            title = stringResource(R.string.about_card_credits_title),
-            subtitle = stringResource(R.string.about_card_credits_subtitle),
-            trailingIcon = Icons.AutoMirrored.Filled.OpenInNew,
-            onClick = { showCreditsSheet = true },
         )
 
         Button(

@@ -83,14 +83,6 @@ class DemoHostActivity : ComponentActivity() {
         val demoId = intent.getStringExtra(EXTRA_DEMO_ID)
             ?: error("DemoHostActivity launched without $EXTRA_DEMO_ID extra")
 
-        // Honor alias / `--es tab <i>` pre-selection for consolidated demos, mirroring the
-        // main-app MainActivity ingress (#2315). This host launches a single demo directly,
-        // so set the one-shot tab before the composable consumes it via initialDemoMode().
-        DemoSettings.initialTab = DeepLinkRouter.resolveInitialTab(
-            rawId = demoId,
-            tabParam = intent.getStringExtra(DeepLinkRouter.QUERY_PARAM_TAB),
-        )
-
         setContent {
             SceneViewDemoTheme {
                 DemoById(demoId)
@@ -101,13 +93,9 @@ class DemoHostActivity : ComponentActivity() {
     @Composable
     private fun DemoById(id: String) {
         val back: () -> Unit = { finish() }
-        // Resolve retired ids to their live consolidated demo, then delegate to the
-        // collator-generated router that covers every ALL_DEMOS id by construction. This
-        // eliminates the hand-written-when() drift class (#2319 / #2320): there is no longer a
-        // per-demo branch to forget.
         val resolved = routableId(id)
             ?: error(
-                "Unknown demo id '$id' — not in ALL_DEMOS and not a known retired-id alias. " +
+                "Unknown demo id '$id' — not in ALL_DEMOS. " +
                     "Add a *Fragment.kt under io.github.sceneview.demo.fragments and run " +
                     "samples/android-demo/scripts/collate-demos.sh (see DemoHostRoutableTest).",
             )

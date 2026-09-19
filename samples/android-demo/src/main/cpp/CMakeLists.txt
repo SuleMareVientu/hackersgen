@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(splat_capture_jni CXX)
 
+set_property(GLOBAL PROPERTY JOB_POOLS compile_job_pool=4 link_job_pool=2)
+set(CMAKE_JOB_POOL_COMPILE compile_job_pool)
+set(CMAKE_JOB_POOL_LINK link_job_pool)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,max-page-size=16384")
@@ -52,12 +56,12 @@ FetchContent_Declare(
   GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
   GIT_TAG 3.4.0
 )
-FetchContent_GetProperties(eigen)
-if(NOT eigen_POPULATED)
-  FetchContent_Populate(eigen)
-endif()
-# Since Eigen is header-only, we don't need to build it.
-set(Eigen3_DIR ${eigen_SOURCE_DIR}/cmake)
+set(BUILD_TESTING OFF CACHE BOOL "Disable testing" FORCE)
+set(EIGEN_BUILD_TESTING OFF CACHE BOOL "Disable testing" FORCE)
+set(EIGEN_BUILD_DOC OFF CACHE BOOL "Disable doc" FORCE)
+set(EIGEN_BUILD_PKGCONFIG OFF CACHE BOOL "Disable pkgconfig" FORCE)
+FetchContent_MakeAvailable(eigen)
+set(Eigen3_DIR ${eigen_BINARY_DIR})
 
 # 5. Fetch Ceres Solver
 FetchContent_Declare(
@@ -74,7 +78,6 @@ set(BUILD_EXAMPLES OFF CACHE BOOL "Disable examples" FORCE)
 set(BUILD_TESTING OFF CACHE BOOL "Disable testing" FORCE)
 set(BUILD_BENCHMARKS OFF CACHE BOOL "Disable benchmarks" FORCE)
 set(PROVIDE_UNINSTALL_TARGET OFF CACHE BOOL "Disable uninstall to prevent clashes" FORCE)
-set(Eigen3_DIR ${eigen_BINARY_DIR})
 FetchContent_MakeAvailable(ceres)
 
 # Add our JNI library

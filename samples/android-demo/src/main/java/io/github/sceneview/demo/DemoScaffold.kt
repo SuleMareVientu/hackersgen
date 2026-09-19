@@ -70,25 +70,6 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
-/**
- * Asset source state surfaced in the per-demo indicator chip (#1152 Stage 3).
- *
- * Demos that load models via `SketchfabAssetResolver` expose this state to
- * advertise the offline / streaming / cached origin of the currently visible
- * asset. The chip floats top-end of the scene area and is intentionally
- * compact + low-contrast so it doesn't compete with the 3D content.
- *
- * - [Streamed] — model came from the Sketchfab CDN and is now cached on disk
- *   (LRU). Subsequent launches are instant.
- * - [Streaming] — fetch in progress; the visual is the bundled fallback for
- *   the moment, swapping to the streamed model when [Streamed] is reached.
- * - [Bundled] — no API key or network → showing the offline fallback declared
- *   in the slug registry. Demos still render fully.
- *
- * Demos that never touch the resolver should pass `null` for the chip param so
- * the chip is hidden entirely.
- */
-enum class AssetSourceState { Streamed, Streaming, Bundled }
 
 /**
  * Shared scaffold for all demo screens — version 2 (modal bottom sheet).
@@ -168,7 +149,6 @@ fun DemoScaffold(
     onBack: () -> Unit,
     controls: (@Composable ColumnScope.() -> Unit)? = null,
     controlsExpanded: androidx.compose.runtime.MutableState<Boolean>? = null,
-    assetSource: AssetSourceState? = null,
     firstFrameRendered: androidx.compose.runtime.State<Boolean>? = null,
     peekHeader: String? = null,
     onResetSettings: (() -> Unit)? = null,
@@ -294,9 +274,6 @@ fun DemoScaffold(
                 FirstFrameScrim(firstFrameRendered = firstFrameRendered)
             }
 
-            if (assetSource != null) {
-                AssetSourceChip(state = assetSource)
-            }
 
             if (controls != null) {
                 DemoSettingsLayer(
@@ -312,46 +289,6 @@ fun DemoScaffold(
     }
 }
 
-/**
- * Compact chip surfacing the [AssetSourceState] of the demo's currently
- * visible asset. Pinned to the top-end of the scene area below the system
- * bars so it doesn't crash into the controls FAB at the bottom-end.
- */
-@Composable
-private fun BoxScope.AssetSourceChip(state: AssetSourceState) {
-    val (label, tint) = when (state) {
-        AssetSourceState.Streamed -> stringResource(R.string.demo_chip_streamed) to
-            MaterialTheme.colorScheme.tertiary
-        AssetSourceState.Streaming -> stringResource(R.string.demo_chip_streaming) to
-            MaterialTheme.colorScheme.primary
-        AssetSourceState.Bundled -> stringResource(R.string.demo_chip_bundled) to
-            MaterialTheme.colorScheme.outline
-    }
-    Row(
-        modifier = Modifier
-            .align(Alignment.TopEnd)
-            .windowInsetsPadding(WindowInsets.systemBars)
-            .padding(12.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
-            .padding(horizontal = 10.dp, vertical = 4.dp)
-            .testTag(DemoScaffoldTestTags.ASSET_SOURCE_CHIP)
-            .semantics { contentDescription = "Asset source: $label" },
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .clip(CircleShape)
-                .background(tint),
-        )
-        Text(
-            text = " $label",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-    }
-}
 
 /**
  * Surface-tinted scrim that covers the 3D viewport until the SceneView presents
@@ -426,7 +363,6 @@ object DemoScaffoldTestTags {
     const val RESET_ACTION = "demo-reset-action"
     const val FEEDBACK_ACTION = "demo-feedback-action"
     const val QA_PILL = "demo-qa-pill"
-    const val ASSET_SOURCE_CHIP = "demo-asset-source-chip"
     const val FIRST_FRAME_SCRIM = "demo-first-frame-scrim"
 }
 

@@ -1,125 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- App-level strings. Per-demo strings (titles, subtitles, demo-specific
-     controls) live in `strings_demo_<id>.xml` next to this file — Android's
-     resource merger fans every `res/values/*.xml` in, so `R.string.demo_*`
-     references resolve identically. See issue #1870 and
-     `samples/android-demo/demo-fragments/README.md`. -->
 <resources>
     <string name="app_name">SceneView</string>
 
     <!-- Navigation -->
-    <string name="tab_3d">3D</string>
-    <string name="tab_ar">AR</string>
     <string name="tab_samples">Samples</string>
     <string name="tab_about">About</string>
-    <string name="tab_explore">Explore</string>
-    <string name="tab_ar_view">AR View</string>
-
-    <!-- Explore screen -->
-    <string name="explore_title">SceneView</string>
-    <string name="explore_subtitle">3D &amp; AR for Jetpack Compose</string>
-    <string name="explore_gesture_hint">Pinch to zoom · Drag to orbit · Double-tap to enlarge</string>
-    <string name="explore_pause">Pause animation</string>
-    <string name="explore_play">Play animation</string>
-    <string name="explore_animation_count">%d animations</string>
-    <string name="explore_loading">Loading 3D model</string>
-    <string name="explore_heading">Explore</string>
-    <string name="explore_search_placeholder">Search 3D models on Sketchfab</string>
-    <string name="explore_filter_animated">Animated</string>
-    <string name="explore_try_a_sample">Try a sample</string>
-    <string name="explore_trending_models">Trending models</string>
-    <string name="explore_staff_picks">Staff picks</string>
-    <string name="explore_recently_added">Recently added</string>
-    <string name="explore_categories">Categories</string>
-    <string name="explore_recent_searches">Recent searches</string>
-    <string name="explore_clear">Clear</string>
-    <string name="explore_clear_search">Clear search</string>
-    <string name="explore_remove_query">Remove %s</string>
-    <string name="explore_search_results">Search results</string>
-    <string name="explore_search_no_results">No results for "%s"</string>
-    <string name="explore_search_loading">Searching…</string>
-    <!-- Defensive banner shown when SketchfabConfig.apiKey is null (#1909).
-         End-user release builds with a missing or revoked secret would
-         otherwise silently render an Explore tab without carousels and a
-         search bar that swallows every query — see issue #1909. -->
-    <string name="explore_sketchfab_disabled_title">Sketchfab carousels disabled</string>
-    <string name="explore_sketchfab_disabled_subtitle">API key missing — search and trending feeds are unavailable.</string>
-    <string name="explore_sketchfab_disabled_dialog_title">Sketchfab integration is off</string>
-    <string name="explore_sketchfab_disabled_dialog_body">This build was published without a Sketchfab API key, so the Staff Picks, Most Liked and Recently Added carousels are hidden and search is disabled.\n\nThe curated samples and category grid below still work — they bundle local 3D models.\n\nIf you\'re building locally, add the line below to <b>local.properties</b> and rebuild:\n\n  sketchfab.api.key=&lt;your-token&gt;\n\nGrab a token at Sketchfab → Settings → Password &amp; API → API Token.</string>
-    <string name="explore_sketchfab_disabled_dismiss">Got it</string>
-    <string name="explore_sketchfab_search_hint">Search needs a Sketchfab API key — see banner above.</string>
-    <!-- Shown instead of the "key missing" copy when the key is present but the
-         Sketchfab API rejected it with HTTP 401/403 — see issue #2095. -->
-    <string name="explore_sketchfab_rejected_title">Sketchfab unavailable</string>
-    <string name="explore_sketchfab_rejected_subtitle">The Sketchfab API key was rejected — search and trending feeds can\'t load.</string>
-    <string name="explore_sketchfab_rejected_dialog_body">The Sketchfab API key for this build was rejected by the server (HTTP 401/403). The key is most likely revoked, expired, lacks the required scope, or hit a temporary rate limit.\n\nThe curated samples and category grid below still work — they bundle local 3D models.\n\nIf you\'re building locally, check the token in <b>local.properties</b>:\n\n  sketchfab.api.key=&lt;your-token&gt;\n\nGet a fresh token at Sketchfab → Settings → Password &amp; API → API Token.</string>
-
-    <!-- Sketchfab model viewer screen -->
-    <string name="sketchfab_animated">Animated</string>
-    <string name="sketchfab_open_in_sceneview">Open in SceneView</string>
-    <string name="sketchfab_rendered_locally">Rendered locally by Filament — no external viewer.</string>
-    <string name="sketchfab_loading_model">Loading %s…</string>
-    <string name="sketchfab_streaming_from">Streaming from Sketchfab · rendering in SceneView</string>
-    <string name="sketchfab_rendered_by">Rendered by SceneView · %s polys</string>
-    <string name="sketchfab_could_not_open">Couldn\'t open this model</string>
-    <string name="sketchfab_try_again">Try again</string>
-    <string name="sketchfab_download_failed">Download failed</string>
-    <string name="sketchfab_heavy_model_warning">Heavy model (%dk polys) — may take a moment</string>
-
-    <!-- AR screen -->
-    <string name="ar_scan_surface">Point your camera at a flat surface</string>
-    <string name="ar_model_placed">Model placed — tap to reposition</string>
-    <string name="ar_not_available_title">AR Not Available</string>
-    <string name="ar_not_available_description">This device does not support ARCore.\nAR features require a compatible Android device with Google Play Services for AR installed.</string>
-    <string name="ar_drag_to_move">Drag to move</string>
-    <string name="ar_pinch_to_scale">Pinch to scale</string>
-    <string name="ar_twist_to_rotate">Twist to rotate</string>
-    <string name="ar_remove">Remove</string>
-    <string name="ar_model_load_failed">Model could not load — check your connection</string>
-
-    <!-- AR launcher screen -->
-    <string name="ar_experiences_title">AR Experiences</string>
-    <string name="ar_experiences_tagline">Place models, scan faces, anchor to terrain.</string>
-    <string name="ar_status_ready">AR ready on this device.</string>
-    <string name="ar_status_not_installed">AR works on this device — ARCore will install on first launch.</string>
-    <string name="ar_status_apk_old">AR works on this device — an ARCore update is available.</string>
-    <string name="ar_status_unsupported">Live AR is not supported on this device, but you can still explore the AR demos below to see how the SDK is used.</string>
-    <string name="ar_status_unknown_error">Couldn\'t check AR availability. Try one of the demos below to see how the SDK is used.</string>
-    <string name="ar_status_checking">Checking AR availability…</string>
-    <string name="ar_cta_checking">Checking…</string>
-    <string name="ar_cta_grant_camera">Grant Camera Access</string>
-    <string name="ar_cta_start_camera">Start AR Camera</string>
-    <string name="ar_try_an_ar_demo">Try an AR demo</string>
-    <!-- Section header above the curated AR demo grid (#2231). -->
-    <string name="ar_featured_section">Featured</string>
-    <!-- Section header above the full AR demo list. %d is the total AR demo count
-         (featured + remaining) so users see how much there is at a glance (#2231). -->
-    <string name="ar_all_demos_section">All AR demos (%d)</string>
-    <string name="ar_reset_scene">Reset scene</string>
-    <string name="ar_pick_a_model">Pick a model</string>
-    <string name="ar_picker_model_label">Model</string>
-    <string name="ar_status_scanning">Scanning for surfaces…</string>
-    <string name="ar_status_tap_to_place">Tap a surface to place %s</string>
-    <string name="ar_status_one_placed">1 placed · tap to add</string>
-    <string name="ar_status_n_placed">%d placed · tap to add</string>
-    <string name="ar_starting_session">Starting AR session…</string>
-    <string name="ar_starting_session_subtitle">Hold up — initializing ARCore.</string>
-    <string name="ar_permission_required_title">Camera permission is required to run AR</string>
-    <string name="ar_permission_required_subtitle">Grant the permission in system settings, then return to this tab.</string>
-
-    <!-- Featured AR demos on the AR launcher -->
-    <string name="featured_ar_placement_title">Tap to Place</string>
-    <string name="featured_ar_placement_subtitle">Tap a detected plane to place a model</string>
-    <string name="featured_ar_face_title">Augmented Faces</string>
-    <string name="featured_ar_face_subtitle">Face mesh tracking and overlays</string>
-    <string name="featured_ar_cloud_anchor_title">Cloud Anchors</string>
-    <string name="featured_ar_cloud_anchor_subtitle">Persistent multi-user anchors</string>
-    <string name="featured_ar_streetscape_title">Streetscape Geometry</string>
-    <string name="featured_ar_streetscape_subtitle">Geospatial building and terrain meshes</string>
-    <string name="featured_ar_depth_occlusion_title">Depth Occlusion</string>
-    <string name="featured_ar_depth_occlusion_subtitle">Real-world depth masks virtual objects</string>
-    <string name="featured_ar_pose_title">Pose Placement</string>
-    <string name="featured_ar_pose_subtitle">Free pose positioning</string>
 
     <!-- Samples screen -->
     <string name="samples_title">Samples</string>
@@ -133,58 +18,13 @@
     <string name="samples_footer_version">SceneView v%s</string>
     <string name="samples_footer_repo">github.com/sceneview/sceneview</string>
 
-    <!-- Sample categories (legacy keys kept for accessibility / cross-platform docs) -->
-    <string name="category_3d">3D</string>
-    <string name="category_effects">Effects</string>
-    <string name="category_content">Content</string>
-    <string name="category_advanced">Advanced</string>
-    <string name="category_ar">AR</string>
-    <string name="category_interactive">Interactive</string>
-
-    <!-- Sample categories (stable display labels used by DemoListScreen) -->
+    <!-- Sample categories -->
     <string name="category_3d_basics">3D Basics</string>
-    <string name="category_lighting_environment">Lighting &amp; Environment</string>
-    <string name="category_interaction">Interaction</string>
+    <string name="category_content">Content</string>
     <string name="category_augmented_reality">Augmented Reality</string>
-
-    <!-- Sample demo titles (legacy keys preserved for backwards compatibility) -->
-    <string name="demo_animations">Animations</string>
-    <string name="demo_animations_desc">Play, pause, and cycle through model animations</string>
-    <string name="demo_line_paths">Line Paths</string>
-    <string name="demo_line_paths_desc">3D polylines and Lissajous curves</string>
-    <string name="demo_gltf_cameras">glTF Cameras</string>
-    <string name="demo_gltf_cameras_desc">Import and switch between cameras from glTF files</string>
-    <string name="demo_dynamic_lighting">Dynamic Lighting</string>
-    <string name="demo_dynamic_lighting_desc">Adjust light color, intensity, and type in real time</string>
 
     <!-- Demo placeholder -->
     <string name="demo_coming_soon">Coming soon</string>
-
-    <!-- Demo UI controls -->
-    <string name="control_sun_intensity">Sun Intensity: %d lux</string>
-    <string name="control_fog_density">Fog Density: %s</string>
-    <string name="control_drop_again">Drop Again</string>
-    <string name="control_camera_label">Camera: %s</string>
-    <string name="control_orbit_instruction">1 finger — Orbit</string>
-    <string name="control_pan_instruction">2 fingers — Pan</string>
-    <string name="control_zoom_instruction">Pinch — Zoom</string>
-    <string name="control_double_tap_reset">Double tap — Reset</string>
-    <string name="control_environment_reflections">Environment Reflections</string>
-    <string name="control_environment_reflections_desc">Switch environments to see how reflections change on the model surface.</string>
-    <string name="control_light_color">Light Color</string>
-    <string name="control_light_intensity">Intensity: %d</string>
-    <string name="control_light_type">Light Type</string>
-    <string name="control_animation_speed">Speed: %.1fx</string>
-    <string name="control_animation_loop">Loop</string>
-    <string name="control_gesture_drag_hint">Drag model to move · Pinch to resize · Twist to rotate</string>
-    <string name="control_reset_position">Reset</string>
-
-    <!-- Image Detection demo -->
-    <string name="image_detection_title">Image Detection Demo</string>
-    <string name="image_detection_desc">Uses AugmentedImageDatabase to detect\nprinted images and overlay 3D content.</string>
-    <string name="image_detection_point_camera">Point camera at the SceneView logo</string>
-    <string name="image_detection_count">%d image(s) detected</string>
-    <string name="image_detection_ar_unavailable">AR not available on this device.\nImage Detection requires ARCore.</string>
 
     <!-- About screen -->
     <string name="about_title">About</string>
@@ -193,98 +33,62 @@
     <string name="about_tagline">3D &amp; AR as declarative UI\nfor Android, iOS, Web &amp; more</string>
     <string name="about_tagline_hero">3D &amp; AR for Jetpack Compose, SwiftUI, and the Web.\nDeclarative, AI-friendly, open source.</string>
     <string name="about_feature_3d_title">3D Scenes</string>
-    <string name="about_feature_3d_desc">Full Jetpack Compose integration with Filament rendering engine. Load glTF/GLB models, procedural geometry, dynamic skies, and more.</string>
+    <string name="about_feature_3d_desc">Full Jetpack Compose integration with Filament rendering engine. Load 3D Gaussian Splats, procedural geometry, dynamic skies, and more.</string>
     <string name="about_feature_ar_title">Augmented Reality</string>
-    <string name="about_feature_ar_desc">ARCore-powered tap-to-place, plane detection, image tracking, depth occlusion, and light estimation.</string>
+    <string name="about_feature_ar_desc">ARCore-powered capture, camera tracking, and real-time visual features.</string>
     <string name="about_feature_ai_title">AI-First SDK</string>
     <string name="about_feature_ai_desc">Designed so AI assistants can generate correct 3D/AR code on the first try. Declarative API, comprehensive docs, machine-readable references.</string>
-    <string name="about_platforms_title">9 Platforms</string>
+    <string name="about_platforms_title">Platforms</string>
     <string name="about_github">GitHub</string>
     <string name="about_docs">Docs</string>
     <string name="about_credits_title">Credits</string>
     <string name="about_credits_filament">Built with Google Filament, ARCore, Jetpack Compose, and Material 3 Expressive.</string>
-    <string name="about_credits_models">3D models sourced from Sketchfab, Khronos glTF Sample Assets and Poly Haven. Each model is distributed under its original CC-BY 4.0 or CC0 1.0 license; credit is given to every creator in the full list below.</string>
-    <string name="about_credits_models_link">View 3D asset credits</string>
+    <string name="about_credits_models">Assets are sourced under CC0 / Apache 2.0 licenses; see assets/CREDITS.md.</string>
+    <string name="about_credits_models_link">View asset credits</string>
     <string name="about_credits_models_url">https://github.com/sceneview/sceneview/blob/main/assets/CREDITS.md</string>
-    <string name="about_credits_license">SceneView itself is open source under the Apache License 2.0. Model licenses are separate and attached to each individual asset.</string>
+    <string name="about_credits_license">SceneView itself is open source under the Apache License 2.0.</string>
     <string name="about_card_open_source_title">Open Source</string>
     <string name="about_card_open_source_subtitle">Apache 2.0 — free for any project, forever</string>
     <string name="about_card_docs_title">Documentation</string>
     <string name="about_card_docs_subtitle">Guides, API reference, recipes</string>
     <string name="about_card_github_title">GitHub</string>
     <string name="about_card_github_subtitle">Source, issues, releases</string>
-    <string name="about_card_playground_title">3D Playground</string>
-    <string name="about_card_playground_subtitle">Try every feature in the browser</string>
+    <string name="about_card_playground_title">Playground</string>
+    <string name="about_card_playground_subtitle">Try SceneView interactive web demos</string>
     <string name="about_card_sponsor_title">Sponsor</string>
     <string name="about_card_sponsor_subtitle">Help keep the project free &amp; active</string>
-    <string name="about_card_credits_title">Credits</string>
-    <string name="about_card_credits_subtitle">Authors &amp; CC-BY attribution for every streamed Sketchfab model</string>
-
-    <!-- Credits bottom sheet (#1152 Stage 3 — CC-BY attribution surface) -->
-    <string name="credits_sheet_title">Streamed model credits</string>
-    <string name="credits_sheet_subtitle">Every model below is streamed from Sketchfab under CC-BY 4.0. Tap a row to open the original page.</string>
-    <string name="credits_sheet_footer">Bundled (offline) models and HDR environments are credited in assets/CREDITS.md inside the APK.</string>
-    <string name="credits_row_subtitle">by %1$s — CC-BY 4.0</string>
-    <string name="credits_row_open_cd">Open Sketchfab page</string>
-
-    <!-- Stage 3 per-demo offline indicator chip (DemoScaffold v2) -->
-    <string name="demo_chip_streamed">Streamed (cached)</string>
-    <string name="demo_chip_streaming">Streaming…</string>
-    <string name="demo_chip_bundled">Offline model</string>
-
-    <!-- DemoScaffold v2 bottom-sheet settings (#1154) -->
-    <string name="demo_settings_title">Settings</string>
-    <string name="demo_settings_open">Open demo settings</string>
-    <string name="demo_settings_fab_cd">Demo settings</string>
-    <string name="demo_settings_reset">Reset</string>
-    <string name="demo_settings_reset_cd">Reset demo settings to defaults</string>
-    <!-- Predictable per-demo reset action (#1966) -->
-    <string name="demo_reset_cd">Reset this demo to its initial state</string>
-    <string name="demo_reset_done">Demo reset — ready to try again</string>
     <string name="about_star_on_github">Star on GitHub</string>
     <string name="about_made_with">Made with</string>
     <string name="about_made_by"> by Thomas Gorisse</string>
     <string name="about_made_by_team">and the SceneView contributors</string>
 
-    <!-- Update banner -->
-    <string name="update_available">Update available</string>
-    <string name="update_downloading">Downloading update…</string>
-    <string name="update_ready">Update ready!</string>
-    <string name="update_restart">Restart</string>
-    <string name="update_check">Check for updates</string>
+    <!-- Demo settings & controls -->
+    <string name="demo_settings_title">Settings</string>
+    <string name="demo_settings_open">Open demo settings</string>
+    <string name="demo_settings_fab_cd">Demo settings</string>
+    <string name="demo_settings_reset">Reset</string>
+    <string name="demo_settings_reset_cd">Reset demo settings to defaults</string>
+    <string name="demo_reset_cd">Reset this demo to its initial state</string>
+    <string name="demo_reset_done">Demo reset — ready to try again</string>
 
     <!-- Error states -->
     <string name="ar_not_available">AR is not available on this device</string>
     <string name="ar_not_installed">Google Play Services for AR is not installed</string>
     <string name="ar_camera_permission">Camera permission is required for AR</string>
     <string name="ar_grant_permission">Grant Camera Permission</string>
-    <string name="model_loading">Loading 3D model…</string>
+    <string name="model_loading">Loading model…</string>
     <string name="model_loading_error">Failed to load model</string>
     <string name="scene_error">Something went wrong rendering the scene</string>
 
     <!-- Accessibility -->
     <string name="cd_3d_scene">3D scene viewport</string>
     <string name="cd_ar_scene">Augmented reality viewport</string>
-    <string name="cd_loading_model">Loading 3D model, please wait</string>
-    <string name="cd_model_selector">Select a 3D model</string>
-    <string name="cd_environment_selector">Select lighting environment</string>
+    <string name="cd_loading_model">Loading model, please wait</string>
     <string name="cd_back_button">Navigate back</string>
-    <string name="cd_remove_model">Remove placed model</string>
-    <string name="cd_scanning_surface">Scanning for flat surface</string>
 
-    <!-- AR tracking-failure messages (TrackingFailureMessages.kt) — ported
-         from arcore-android-sdk's common/helpers/TrackingStateHelper.java.
-         Each maps a `TrackingFailureReason` to a short actionable hint. -->
-    <string name="tracking_failure_bad_state">AR session error — try restarting the demo</string>
-    <string name="tracking_failure_insufficient_light">Not enough light — try a brighter area</string>
-    <string name="tracking_failure_excessive_motion">Moving too fast — slow down</string>
-    <string name="tracking_failure_insufficient_features">Not enough detail — point at a more textured surface</string>
-    <string name="tracking_failure_camera_unavailable">Camera unavailable — close other camera apps</string>
-
-    <!-- In-app bug report — lightweight, permission-free (successor of #1932/#2188) -->
+    <!-- In-app bug report -->
     <string name="feedback_button">Feedback</string>
     <string name="feedback_action_cd">Send feedback</string>
-    <!-- Generic close a11y label — also reused by SketchfabModelViewerScreen. -->
     <string name="feedback_cd_close">Close</string>
     <string name="feedback_report_title">Report a bug</string>
     <string name="feedback_report_body">The report bundles your device info, the app\'s recent log, and an optional screenshot. Nothing leaves your device until you choose where to send it.</string>

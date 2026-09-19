@@ -55,37 +55,26 @@ data class DemoEntry(
  * header label.
  */
 object DemoCategory {
-    const val BASICS_3D = "3D Basics"
-    const val LIGHTING_ENVIRONMENT = "Lighting & Environment"
-    const val CONTENT = "Content"
-    const val INTERACTION = "Interaction"
-    const val ADVANCED = "Advanced"
     const val AUGMENTED_REALITY = "Augmented Reality"
+    const val CONTENT = "Content"
+    const val BASICS_3D = "3D Basics"
 }
 
 /** Ordered list of category keys — controls display order in the list. */
 val DEMO_CATEGORIES = listOf(
-    DemoCategory.BASICS_3D,
-    DemoCategory.LIGHTING_ENVIRONMENT,
-    DemoCategory.CONTENT,
-    DemoCategory.INTERACTION,
-    DemoCategory.ADVANCED,
     DemoCategory.AUGMENTED_REALITY,
+    DemoCategory.CONTENT,
+    DemoCategory.BASICS_3D,
 )
 
 /**
  * Maps a stable category key to its display-name resource ID.
- * Unknown keys fall back to [R.string.category_3d] (safe default — never
- * surfaces a raw key like "3D Basics" to the user).
  */
 @StringRes
 fun categoryDisplayNameRes(category: String): Int = when (category) {
-    DemoCategory.BASICS_3D -> R.string.category_3d_basics
-    DemoCategory.LIGHTING_ENVIRONMENT -> R.string.category_lighting_environment
-    DemoCategory.CONTENT -> R.string.category_content
-    DemoCategory.INTERACTION -> R.string.category_interaction
-    DemoCategory.ADVANCED -> R.string.category_advanced
     DemoCategory.AUGMENTED_REALITY -> R.string.category_augmented_reality
+    DemoCategory.CONTENT -> R.string.category_content
+    DemoCategory.BASICS_3D -> R.string.category_3d_basics
     else -> R.string.category_3d_basics
 }
 
