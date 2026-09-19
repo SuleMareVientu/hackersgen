@@ -432,7 +432,7 @@ public:
        current_phase_ = 6;
        auto t_filter_start = std::chrono::steady_clock::now();
        auto consistent_dense = point_cloud_filter_->filterConsistency(dense_candidates, arcore_poses, 2, max_reproj);
-       auto final_points = point_cloud_filter_->fuseAndFilter(tracks, consistent_dense, 0.0015f);
+       auto final_points = point_cloud_filter_->fuseAndFilter(tracks, consistent_dense, arcore_poses, 0.0015f);
        auto t_filter_end = std::chrono::steady_clock::now();
        LOGI("Phase 6 (Consistency & Fusion) took %lld ms (%zu final points)",
             (long long)std::chrono::duration_cast<std::chrono::milliseconds>(t_filter_end - t_filter_start).count(),

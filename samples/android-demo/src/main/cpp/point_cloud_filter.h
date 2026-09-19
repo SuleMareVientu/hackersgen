@@ -19,11 +19,10 @@ public:
         int min_views = 2,
         float max_reproj_err = 2.5f);
 
-    // Merge Tier 1 and Tier 2, apply statistical outlier removal and voxel thinning (§3.9)
+    // Merge Tier 1 and Tier 2, audit Tier 1 reprojection, apply isolation filter and voxel thinning (§3.9)
     std::vector<Track> fuseAndFilter(
         const std::vector<Track>& tier1_tracks,
         const std::vector<Track>& tier2_tracks,
-        float voxel_size_m = 0.0015f,
-        int knn_k = 8,
-        float std_ratio = 2.5f);
+        const std::vector<CameraPose>& poses = {},
+        float voxel_size_m = 0.0015f);
 };

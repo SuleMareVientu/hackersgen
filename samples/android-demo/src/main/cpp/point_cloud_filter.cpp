@@ -50,7 +50,7 @@ std::vector<Track> PointCloudFilter::filterConsistency(
                     cv::Mat pt_proj = pose.K * pt_cam;
 
                     float z = pt_proj.at<float>(2, 0);
-                    if (z <= 0.01f) {
+                    if (z < 0.20f || z > 3.50f) {
                         all_valid = false;
                         break;
                     }
@@ -110,16 +110,74 @@ namespace {
 std::vector<Track> PointCloudFilter::fuseAndFilter(
     const std::vector<Track>& tier1_tracks,
     const std::vector<Track>& tier2_tracks,
-    float voxel_size_m,
-    int knn_k,
-    float std_ratio) {
+    const std::vector<CameraPose>& poses,
+    float voxel_size_m) {
 
-    // 1. Merge Tier 1 (anchors) and Tier 2 (consistent dense fill)
-    std::vector<Track> all_tracks;
-    all_tracks.reserve(tier1_tracks.size() + tier2_tracks.size());
+    // 1. Audit Tier 1 tracks against camera poses (reprojection error & bounded depth)
+    std::vector<Track> tier1_audited;
+    tier1_audited.reserve(tier1_tracks.size());
+
+    const float max_tier1_reproj_err = 1.8f;
+    const float min_depth = 0.20f;
+    const float max_depth = 3.50f;
 
     for (const auto& t : tier1_tracks) {
-        if (t.valid) all_tracks.push_back(t);
+        if (!t.valid || t.observations.size() < 2) continue;
+
+        bool valid = true;
+        if (!poses.empty()) {
+            cv::Mat pt3d_mat = (cv::Mat_<float>(3, 1) << t.pt3d.x, t.pt3d.y, t.pt3d.z);
+            float total_err = 0.0f;
+            for (const auto& obs : t.observations) {
+                if (obs.camera_idx >= poses.size()) {
+                    valid = false;
+                    break;
+                }
+                const auto& pose = poses[obs.camera_idx];
+                cv::Mat pt_cam = pose.R * pt3d_mat + pose.t;
+                float z = pt_cam.at<float>(2, 0);
+                if (z < min_depth || z > max_depth) {
+                    valid = false;
+                    break;
+                }
+
+                cv::Mat pt_proj = pose.K * pt_cam;
+                float u_proj = pt_proj.at<float>(0, 0) / z;
+                float v_proj = pt_proj.at<float>(1, 0) / z;
+                float du = u_proj - obs.pt2d.x;
+                float dv = v_proj - obs.pt2d.y;
+                float err = std::sqrt(du * du + dv * dv);
+                if (err > max_tier1_reproj_err * 1.5f) {
+                    valid = false;
+                    break;
+                }
+                total_err += err;
+            }
+            if (valid) {
+                float mean_err = total_err / t.observations.size();
+                if (mean_err > max_tier1_reproj_err) {
+                    valid = false;
+                }
+            }
+        }
+
+        if (valid) {
+            tier1_audited.push_back(t);
+        }
+    }
+
+    LOGI("Audited Tier 1 tracks: %zu / %zu retained (pruned %zu rogue anchors with reproj error > %.1fpx or depth outside [%.2f, %.2f]m)",
+         tier1_audited.size(), tier1_tracks.size(),
+         tier1_tracks.size() - tier1_audited.size(),
+         max_tier1_reproj_err, min_depth, max_depth);
+
+    // 2. Merge audited Tier 1 and consistent Tier 2 dense fill
+    std::vector<Track> all_tracks;
+    all_tracks.reserve(tier1_audited.size() + tier2_tracks.size());
+
+    size_t num_tier1 = tier1_audited.size();
+    for (auto& t : tier1_audited) {
+        all_tracks.push_back(std::move(t));
     }
     for (const auto& t : tier2_tracks) {
         if (t.valid) all_tracks.push_back(t);
@@ -127,112 +185,90 @@ std::vector<Track> PointCloudFilter::fuseAndFilter(
 
     if (all_tracks.size() < 10) return all_tracks;
 
-    LOGI("Fused raw point cloud: %zu anchors + %zu dense = %zu total points",
-         tier1_tracks.size(), tier2_tracks.size(), all_tracks.size());
+    LOGI("Fused raw point cloud: %zu anchors + %zu dense = %zu total candidate points",
+         num_tier1, tier2_tracks.size(), all_tracks.size());
 
-    // 2. Statistical Outlier Removal (SOR) via grid-accelerated spatial hashing
-    float search_cell_size = 0.010f; // 1.0cm query cells (scaled for 1.5mm resolution)
-    std::unordered_map<int64_t, std::vector<int>> search_grid;
+    // 3. Ultra-Conservative Wide-Radius Isolation Filter (5.0cm radius, min 2 neighbors)
+    // Solitary floaters in mid-air have 0 or 1 neighbor in a 10cm sphere.
+    // Thin geometry (wires, chair legs, rims) has dozens of points within 5cm along the structure.
+    const float isolation_radius = 0.050f; // 5.0 cm
+    const float isolation_radius_sq = isolation_radius * isolation_radius;
+    const float isolation_cell_size = 0.050f; // 5.0 cm grid cells
 
+    std::unordered_map<int64_t, std::vector<int>> isolation_grid;
     for (size_t i = 0; i < all_tracks.size(); ++i) {
         const auto& p = all_tracks[i].pt3d;
-        int ix = static_cast<int>(std::floor(p.x / search_cell_size));
-        int iy = static_cast<int>(std::floor(p.y / search_cell_size));
-        int iz = static_cast<int>(std::floor(p.z / search_cell_size));
-        search_grid[hashVoxel(ix, iy, iz)].push_back(static_cast<int>(i));
+        int ix = static_cast<int>(std::floor(p.x / isolation_cell_size));
+        int iy = static_cast<int>(std::floor(p.y / isolation_cell_size));
+        int iz = static_cast<int>(std::floor(p.z / isolation_cell_size));
+        isolation_grid[hashVoxel(ix, iy, iz)].push_back(static_cast<int>(i));
     }
 
-    std::vector<float> avg_distances(all_tracks.size(), 0.0f);
-    std::vector<bool> sor_keep(all_tracks.size(), true);
+    std::vector<bool> keep_isolated(all_tracks.size(), true);
+    int num_threads_iso = std::max(1u, std::thread::hardware_concurrency());
+    std::vector<std::thread> iso_workers;
+    std::atomic<size_t> next_iso_idx{0};
 
-    int num_threads_sor = std::max(1u, std::thread::hardware_concurrency());
-    std::vector<std::thread> sor_workers;
-    std::atomic<size_t> next_sor_idx{0};
-
-    for (int t = 0; t < num_threads_sor; ++t) {
-        sor_workers.emplace_back([&]() {
+    for (int t = 0; t < num_threads_iso; ++t) {
+        iso_workers.emplace_back([&]() {
             while (true) {
-                size_t i = next_sor_idx.fetch_add(1);
+                size_t i = next_iso_idx.fetch_add(1);
                 if (i >= all_tracks.size()) break;
 
                 const auto& p = all_tracks[i].pt3d;
-                int ix = static_cast<int>(std::floor(p.x / search_cell_size));
-                int iy = static_cast<int>(std::floor(p.y / search_cell_size));
-                int iz = static_cast<int>(std::floor(p.z / search_cell_size));
+                int ix = static_cast<int>(std::floor(p.x / isolation_cell_size));
+                int iy = static_cast<int>(std::floor(p.y / isolation_cell_size));
+                int iz = static_cast<int>(std::floor(p.z / isolation_cell_size));
 
-                std::vector<float> neighbor_dists;
+                int neighbor_count = 0;
+                bool found_enough = false;
 
-                for (int dx = -1; dx <= 1; ++dx) {
-                    for (int dy = -1; dy <= 1; ++dy) {
-                        for (int dz = -1; dz <= 1; ++dz) {
-                            auto it = search_grid.find(hashVoxel(ix + dx, iy + dy, iz + dz));
-                            if (it != search_grid.end()) {
+                for (int dx = -1; dx <= 1 && !found_enough; ++dx) {
+                    for (int dy = -1; dy <= 1 && !found_enough; ++dy) {
+                        for (int dz = -1; dz <= 1 && !found_enough; ++dz) {
+                            auto it = isolation_grid.find(hashVoxel(ix + dx, iy + dy, iz + dz));
+                            if (it != isolation_grid.end()) {
                                 for (int neighbor_idx : it->second) {
                                     if (neighbor_idx == static_cast<int>(i)) continue;
                                     const auto& np = all_tracks[neighbor_idx].pt3d;
-                                    float d = cv::norm(p - np);
-                                    neighbor_dists.push_back(d);
+                                    float ddx = p.x - np.x;
+                                    float ddy = p.y - np.y;
+                                    float ddz = p.z - np.z;
+                                    if ((ddx * ddx + ddy * ddy + ddz * ddz) <= isolation_radius_sq) {
+                                        neighbor_count++;
+                                        if (neighbor_count >= 2) {
+                                            found_enough = true;
+                                            break;
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
 
-                if (neighbor_dists.size() < 2) {
-                    avg_distances[i] = 999.0f;
-                    continue;
+                if (neighbor_count < 2) {
+                    keep_isolated[i] = false;
                 }
-
-                std::sort(neighbor_dists.begin(), neighbor_dists.end());
-                int k_use = std::min(static_cast<int>(neighbor_dists.size()), knn_k);
-                float sum_d = 0.0f;
-                for (int k = 0; k < k_use; ++k) {
-                    sum_d += neighbor_dists[k];
-                }
-                avg_distances[i] = sum_d / k_use;
             }
         });
     }
-    for (auto& w : sor_workers) {
+    for (auto& w : iso_workers) {
         w.join();
     }
 
-    // Compute distribution statistics across valid points
-    double sum = 0.0;
-    int valid_count = 0;
-    for (float d : avg_distances) {
-        if (d < 900.0f) {
-            sum += d;
-            valid_count++;
-        }
+    size_t isolated_removed = 0;
+    for (bool k : keep_isolated) {
+        if (!k) isolated_removed++;
     }
+    LOGI("Wide-radius isolation filter (5cm): pruned %zu solitary floaters (< 2 neighbors in 10cm sphere)",
+         isolated_removed);
 
-    if (valid_count > 0) {
-        double mean = sum / valid_count;
-        double sq_sum = 0.0;
-        for (float d : avg_distances) {
-            if (d < 900.0f) {
-                sq_sum += (d - mean) * (d - mean);
-            }
-        }
-        double std_dev = std::sqrt(sq_sum / valid_count);
-        double threshold = mean + std_ratio * std_dev;
-
-        for (size_t i = 0; i < all_tracks.size(); ++i) {
-            if (i < tier1_tracks.size()) {
-                // Ground-truth Tier 1 anchor features are always protected from SOR rejection
-                continue;
-            }
-            if (avg_distances[i] > threshold) {
-                sor_keep[i] = false;
-            }
-        }
-    }
-
-    // 3. Voxel Grid Spatial Thinning (§3.9)
+    // 4. Voxel Grid Spatial Thinning (§3.9)
+    // Preserves 1.5mm uniform pitch for dense manifold coverage without clumping
     std::unordered_map<int64_t, std::vector<int>> voxel_buckets;
     for (size_t i = 0; i < all_tracks.size(); ++i) {
-        if (!sor_keep[i]) continue;
+        if (!keep_isolated[i]) continue;
         const auto& p = all_tracks[i].pt3d;
         int vx = static_cast<int>(std::floor(p.x / voxel_size_m));
         int vy = static_cast<int>(std::floor(p.y / voxel_size_m));
@@ -241,37 +277,44 @@ std::vector<Track> PointCloudFilter::fuseAndFilter(
     }
 
     std::vector<Track> final_filtered_tracks;
-    final_filtered_tracks.reserve(tier1_tracks.size() + voxel_buckets.size() * 2);
+    final_filtered_tracks.reserve(voxel_buckets.size() * 2);
 
-    // Unconditionally retain all valid Tier 1 anchor tracks (§3.9)
-    for (const auto& t : tier1_tracks) {
-        if (t.valid) final_filtered_tracks.push_back(t);
-    }
-
-    // Retain up to MAX_POINTS_PER_VOXEL Tier 2 dense fill points per voxel (uniform 1.0-1.5mm pitch)
     const size_t MAX_POINTS_PER_VOXEL = 2;
+    size_t kept_anchors = 0;
+    size_t kept_dense = 0;
+
     for (auto& kv : voxel_buckets) {
         auto& indices = kv.second;
-        // Prioritize points with more multi-view observations
-        std::sort(indices.begin(), indices.end(), [&](int a, int b) {
+
+        std::vector<int> t1_indices;
+        std::vector<int> t2_indices;
+        for (int idx : indices) {
+            if (static_cast<size_t>(idx) < num_tier1) {
+                t1_indices.push_back(idx);
+            } else {
+                t2_indices.push_back(idx);
+            }
+        }
+
+        // Add Tier 1 anchors in this voxel
+        for (int idx : t1_indices) {
+            final_filtered_tracks.push_back(std::move(all_tracks[idx]));
+            kept_anchors++;
+        }
+
+        // Sort Tier 2 by observation count (prioritize points seen by more views)
+        std::sort(t2_indices.begin(), t2_indices.end(), [&](int a, int b) {
             return all_tracks[a].observations.size() > all_tracks[b].observations.size();
         });
 
-        size_t kept_in_voxel = 0;
-        for (int idx : indices) {
-            if (static_cast<size_t>(idx) < tier1_tracks.size()) {
-                // Already preserved as Tier 1 anchor
-                continue;
-            }
-            final_filtered_tracks.push_back(std::move(all_tracks[idx]));
-            kept_in_voxel++;
-            if (kept_in_voxel >= MAX_POINTS_PER_VOXEL) break;
+        size_t t2_to_keep = std::min(t2_indices.size(), MAX_POINTS_PER_VOXEL);
+        for (size_t k = 0; k < t2_to_keep; ++k) {
+            final_filtered_tracks.push_back(std::move(all_tracks[t2_indices[k]]));
+            kept_dense++;
         }
     }
 
-    LOGI("Fusion & Thinning complete (§3.9): retained %zu points (%zu anchors + %zu dense) after SOR & %.1fmm voxel grid",
-         final_filtered_tracks.size(), tier1_tracks.size(),
-         final_filtered_tracks.size() > tier1_tracks.size() ? final_filtered_tracks.size() - tier1_tracks.size() : 0,
-         voxel_size_m * 1000.0f);
+    LOGI("Fusion & Thinning complete (§3.9): retained %zu points (%zu anchors + %zu dense) after isolation & %.1fmm voxel grid",
+         final_filtered_tracks.size(), kept_anchors, kept_dense, voxel_size_m * 1000.0f);
     return final_filtered_tracks;
 }

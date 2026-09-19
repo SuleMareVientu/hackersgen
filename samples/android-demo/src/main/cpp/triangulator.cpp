@@ -44,6 +44,16 @@ bool Triangulator::triangulateTrack(Track& track, const std::vector<CameraPose>&
         X.at<float>(2, 0) / w
     );
 
+    // Initial depth sanity check in all observing cameras ([0.20m, 3.50m])
+    cv::Mat pt3d_mat = (cv::Mat_<float>(3, 1) << track.pt3d.x, track.pt3d.y, track.pt3d.z);
+    for (const auto& obs : track.observations) {
+        if (obs.camera_idx >= poses.size()) return false;
+        const auto& pose = poses[obs.camera_idx];
+        cv::Mat pt_cam = pose.R * pt3d_mat + pose.t;
+        float z_cam = pt_cam.at<float>(2, 0);
+        if (z_cam < 0.20f || z_cam > 3.50f) return false;
+    }
+
     // Parallax angle check
     float parallax = computeParallax(track, poses);
     if (parallax < min_parallax_deg_) return false;
@@ -233,7 +243,7 @@ bool Triangulator::refinePointLM(
         double Yc = r10 * X[0] + r11 * X[1] + r12 * X[2] + ty;
         double Zc = r20 * X[0] + r21 * X[1] + r22 * X[2] + tz;
 
-        if (Zc <= 0.02) return false; // Minimum positive depth 2cm
+        if (Zc < 0.20 || Zc > 3.50) return false; // Depth bounded to [0.20m, 3.50m]
 
         double fx = pose.K.at<float>(0, 0);
         double fy = pose.K.at<float>(1, 1);

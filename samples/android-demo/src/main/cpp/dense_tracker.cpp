@@ -60,7 +60,9 @@ bool DenseTracker::triangulateDenseTrack(
     const cv::Mat& c1 = cam_centers[first_obs.camera_idx];
     const cv::Mat& c2 = cam_centers[last_obs.camera_idx];
     float baseline_dist = static_cast<float>(cv::norm(c1 - c2));
-    if (baseline_dist < 0.008f) return false; // Minimum physical baseline: 8mm
+    // Enforce stricter baseline for 2-view tracks to eliminate optical flow needles
+    float min_baseline = (track.observations.size() == 2) ? 0.025f : 0.008f;
+    if (baseline_dist < min_baseline) return false;
 
     // DLT formulation
     cv::Mat A(static_cast<int>(track.observations.size() * 2), 4, CV_32F);
@@ -94,13 +96,15 @@ bool DenseTracker::triangulateDenseTrack(
         X.at<float>(2, 0) / w
     );
 
-    // Fast positive depth check in front of both cameras
+    // Bounded camera depth check in front of both cameras ([0.20m, 3.50m])
     cv::Mat pt3d_m = (cv::Mat_<float>(3, 1) << track.pt3d.x, track.pt3d.y, track.pt3d.z);
     cv::Mat p_cam1 = pose1.R * pt3d_m + pose1.t;
     cv::Mat p_cam2 = pose2.R * pt3d_m + pose2.t;
-    if (p_cam1.at<float>(2, 0) <= 0.05f || p_cam2.at<float>(2, 0) <= 0.05f) return false;
+    float z1 = p_cam1.at<float>(2, 0);
+    float z2 = p_cam2.at<float>(2, 0);
+    if (z1 < 0.20f || z1 > 3.50f || z2 < 0.20f || z2 > 3.50f) return false;
 
-    // Parallax angle check
+    // Parallax angle check (stricter for 2-view tracks)
     cv::Point3f p = track.pt3d;
     cv::Point3f cam1_pt(c1.at<float>(0), c1.at<float>(1), c1.at<float>(2));
     cv::Point3f cam2_pt(c2.at<float>(0), c2.at<float>(1), c2.at<float>(2));
@@ -115,7 +119,8 @@ bool DenseTracker::triangulateDenseTrack(
     ray2 *= (1.0f / n2);
     float dot = std::max(-1.0f, std::min(1.0f, ray1.dot(ray2)));
     float angle_deg = std::acos(dot) * 180.0f / 3.1415926535f;
-    if (angle_deg < min_parallax_deg) return false;
+    float required_parallax = (track.observations.size() == 2) ? std::max(min_parallax_deg, 2.0f) : min_parallax_deg;
+    if (angle_deg < required_parallax) return false;
 
     // Non-linear Levenberg-Marquardt refinement with Huber loss (§3.4, §3.7)
     // Enforces sub-pixel reprojection error (<= 1.2 px) and metric convergence
