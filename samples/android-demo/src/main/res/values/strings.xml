@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">SceneView</string>
+    <string name="app_name">OpenSplat</string>
 
     <!-- Navigation -->
     <string name="tab_samples">Samples</string>
@@ -15,8 +15,8 @@
     <string name="samples_back_about">About</string>
     <string name="samples_chip_preview">Preview</string>
     <string name="samples_chip_soon">Soon</string>
-    <string name="samples_footer_version">SceneView v%s</string>
-    <string name="samples_footer_repo">github.com/sceneview/sceneview</string>
+    <string name="samples_footer_version">OpenSplat v%s</string>
+    <string name="samples_footer_repo">github.com/SuleMareVientu/opensplat-android</string>
 
     <!-- Sample categories -->
     <string name="category_3d_basics">3D Basics</string>
@@ -28,10 +28,10 @@
 
     <!-- About screen -->
     <string name="about_title">About</string>
-    <string name="about_sceneview">SceneView</string>
+    <string name="about_sceneview">OpenSplat</string>
     <string name="about_version">v%s</string>
-    <string name="about_tagline">3D &amp; AR as declarative UI\nfor Android, iOS, Web &amp; more</string>
-    <string name="about_tagline_hero">3D &amp; AR for Jetpack Compose, SwiftUI, and the Web.\nDeclarative, AI-friendly, open source.</string>
+    <string name="about_tagline">3D Gaussian Splatting &amp; AR\nfor Android</string>
+    <string name="about_tagline_hero">3D Gaussian Splatting &amp; AR for Jetpack Compose.\nDeclarative, high-performance, open source.</string>
     <string name="about_feature_3d_title">3D Scenes</string>
     <string name="about_feature_3d_desc">Full Jetpack Compose integration with Filament rendering engine. Load 3D Gaussian Splats, procedural geometry, dynamic skies, and more.</string>
     <string name="about_feature_ar_title">Augmented Reality</string>
@@ -53,10 +53,6 @@
     <string name="about_card_docs_subtitle">Guides, API reference, recipes</string>
     <string name="about_card_github_title">GitHub</string>
     <string name="about_card_github_subtitle">Source, issues, releases</string>
-    <string name="about_card_playground_title">Playground</string>
-    <string name="about_card_playground_subtitle">Try SceneView interactive web demos</string>
-    <string name="about_card_sponsor_title">Sponsor</string>
-    <string name="about_card_sponsor_subtitle">Help keep the project free &amp; active</string>
     <string name="about_star_on_github">Star on GitHub</string>
     <string name="about_made_with">Made with</string>
     <string name="about_made_by"> by Thomas Gorisse</string>

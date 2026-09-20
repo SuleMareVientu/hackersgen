@@ -71,9 +71,8 @@ dependencies {
     api libs.filament.android
 
     // Google Play In-App Updates — `api` so every Android-host sample
-    // (android-demo, android-tv-demo, …) picks up the same flexible-update
-    // wiring via `io.github.sceneview.sample.common.update.InAppUpdateManager`
-    // without re-declaring the dep.
+    // picks up the same flexible-update wiring via
+    // `io.github.sceneview.sample.common.update.InAppUpdateManager` without re-declaring the dep.
     api libs.play.app.update
     api libs.play.app.update.ktx
 

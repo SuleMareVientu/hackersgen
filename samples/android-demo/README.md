@@ -1,15 +1,14 @@
-# SceneView Android Demo
+# OpenSplat Android Demo
 
-Play Store-ready showcase app demonstrating SceneView's full feature set.
+Showcase application demonstrating 3D Gaussian Splatting capabilities on Android.
 
 ## Features
 
-- **4-tab Material 3 Expressive UI** (3D, AR, Samples, About)
-- **43 interactive demos** covering all node types
-- 3D model viewer with orbit camera and HDR environments
-- AR tap-to-place with plane detection
-- Geometry nodes, animations, physics, dynamic sky
-- Dark mode support
+- **Splat Viewer**: Real-time rendering and interactive manipulation of 3D Gaussian Splats.
+- **Splat Training**: On-device point cloud reconstruction and training powered by LiteRT and Ceres Solver.
+- **AR Splat Capture**: Augmented Reality capture and placement powered by ARCore.
+- Material 3 Expressive UI with Dark mode support.
+- PLY and SPZ import and export.
 
 ## Run
 
@@ -23,7 +22,7 @@ Install the APK on a connected device:
 adb install -r samples/android-demo/build/outputs/apk/debug/android-demo-debug.apk
 ```
 
-…or, with Google's [`android` CLI](https://developer.android.com/tools/agents/android-cli) (atomic install + launch):
+…or, with Google's [`android` CLI](https://developer.android.com/tools/agents/android-cli):
 
 ```bash
 android run \
@@ -33,5 +32,5 @@ android run \
 
 ## Requirements
 
-- Android device or emulator (API 28+) — this is the demo app's `minSdk`; the SceneView library itself supports API 24+
+- Android device (API 31+)
 - For AR features: ARCore-compatible device

@@ -171,27 +171,11 @@ private fun AboutTabContent() {
             title = stringResource(R.string.about_card_github_title),
             subtitle = stringResource(R.string.about_card_github_subtitle),
             trailingIcon = Icons.AutoMirrored.Filled.OpenInNew,
-            onClick = { openLink("https://github.com/sceneview/sceneview") },
-        )
-        AboutInfoCard(
-            icon = Icons.Filled.PlayArrow,
-            iconColor = Color(0xFFFF9800),
-            title = stringResource(R.string.about_card_playground_title),
-            subtitle = stringResource(R.string.about_card_playground_subtitle),
-            trailingIcon = Icons.AutoMirrored.Filled.OpenInNew,
-            onClick = { openLink("https://sceneview.github.io/playground.html") },
-        )
-        AboutInfoCard(
-            icon = Icons.Filled.Favorite,
-            iconColor = Color(0xFFF44336),
-            title = stringResource(R.string.about_card_sponsor_title),
-            subtitle = stringResource(R.string.about_card_sponsor_subtitle),
-            trailingIcon = Icons.AutoMirrored.Filled.OpenInNew,
-            onClick = { openLink("https://github.com/sponsors/sceneview") },
+            onClick = { openLink("https://github.com/SuleMareVientu/opensplat-android") },
         )
 
         Button(
-            onClick = { openLink("https://github.com/sceneview/sceneview") },
+            onClick = { openLink("https://github.com/SuleMareVientu/opensplat-android") },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp),

@@ -52,11 +52,7 @@ import androidx.compose.ui.unit.dp
  *
  * @param actionFocusRequester optional [FocusRequester] for the banner's action
  * CTA — the **Update** button while `AVAILABLE`, the **Restart** button while
- * `READY_TO_INSTALL`. D-pad hosts (Android TV) should pass one in: when the
- * banner reaches an actionable state the visible button is focused
- * automatically so the Leanback user can act without hunting for it. Phone
- * hosts leave this `null` — touch users tap the button regardless, and an
- * unsolicited focus request would be inert.
+ * `READY_TO_INSTALL`. When provided, the visible button is focused automatically.
  */
 @Composable
 fun UpdateBanner(
@@ -126,13 +122,9 @@ fun UpdateBanner(
 
                     when (state) {
                         InAppUpdateManager.UpdateState.AVAILABLE -> {
-                            // Auto-focus the Update CTA for D-pad hosts. Keyed
+                            // Auto-focus the Update CTA if a focus requester is provided. Keyed
                             // on `updateState` so it fires exactly once on the
-                            // transition into AVAILABLE, not on every
-                            // recomposition. No-op for phone hosts, which pass
-                            // `actionFocusRequester == null`. Without this the
-                            // Update button is unreachable by D-pad on Android
-                            // TV (#1942 review — MAJOR 5).
+                            // transition into AVAILABLE, not on every recomposition.
                             if (actionFocusRequester != null) {
                                 LaunchedEffect(state) {
                                     actionFocusRequester.requestFocus()
@@ -158,11 +150,9 @@ fun UpdateBanner(
                             }
                         }
                         InAppUpdateManager.UpdateState.READY_TO_INSTALL -> {
-                            // Auto-focus the Restart CTA for D-pad hosts. Keyed
+                            // Auto-focus the Restart CTA if a focus requester is provided. Keyed
                             // on `updateState` so it fires exactly once on the
-                            // transition into READY_TO_INSTALL, not on every
-                            // recomposition. No-op for phone hosts, which pass
-                            // `actionFocusRequester == null`.
+                            // transition into READY_TO_INSTALL, not on every recomposition.
                             if (actionFocusRequester != null) {
                                 LaunchedEffect(state) {
                                     actionFocusRequester.requestFocus()
