@@ -2,7 +2,7 @@
 
 All notable changes to OpenSplat Android will be documented in this file.
 
-## [Unreleased]
+## [1.0.0] - 2026-09-20
 
 ### Added
 - 3D Gaussian Splatting rendering support via customized Filament shaders.
