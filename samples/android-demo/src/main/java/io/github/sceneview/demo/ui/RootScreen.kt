@@ -4,9 +4,12 @@ package io.github.sceneview.demo.ui
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,7 +35,6 @@ import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -52,7 +54,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -234,27 +235,13 @@ private fun AboutHeroCard() {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Box(
+            Image(
+                painter = painterResource(io.github.sceneview.demo.R.drawable.app_logo),
+                contentDescription = stringResource(R.string.app_name),
                 modifier = Modifier
-                    .size(110.dp)
-                    .background(
-                        brush = Brush.linearGradient(
-                            colors = listOf(
-                                Color(0xFF2196F3).copy(alpha = 0.55f),
-                                Color(0xFF9C27B0).copy(alpha = 0.40f),
-                            ),
-                        ),
-                        shape = RoundedCornerShape(28.dp),
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.Filled.ViewInAr,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(56.dp),
-                )
-            }
+                    .size(96.dp)
+                    .clip(RoundedCornerShape(22.dp)),
+            )
             Text(
                 stringResource(R.string.app_name),
                 style = MaterialTheme.typography.headlineLarge,
