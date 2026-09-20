@@ -2,7 +2,6 @@
 # Build tools
 agp = "8.13.2"
 kotlin = "2.4.0"
-composeMultiplatform = "1.11.1"
 
 # AndroidX Core
 coreKtx = "1.18.0"
@@ -55,28 +54,12 @@ kotlinxSerialization = "1.11.0"
 googleMaterial = "1.14.0"
 media3 = "1.10.1"
 
-# TV
-tvFoundation = "1.0.0"
-tvMaterial = "1.1.0"
 
 # Play Services
 playAppUpdate = "2.1.0"
 playServicesLocation = "21.3.0"
 playServicesNearby = "19.3.0"
 
-# ML Kit (object detection demo — see ARMLObjectLabelDemo, #1737)
-mlkitObjectDetection = "17.0.2"
-
-# MediaPipe Tasks Vision (body-tracking demo — see ARBodyTrackerDemo, #1763)
-# Bumped 0.20230731 → 0.10.26: pre-0.10.26 MediaPipe .so files have 4 KB ELF
-# PT_LOAD alignment which Google Play rejects since Jan 2026 (16 KB page-size
-# enforcement). 0.10.26 was the first release with 16 KB-aligned .so binaries
-# ("All the latest Android packages from Google Maven now supporting Android
-# 16kb page size"). Same root-cause as the v4.15.4 fix (#2214); that fix landed
-# on the release branch only and was never merged back to main — the
-# experimentalProperties "16k" anchor in build.gradle is a belt-and-suspenders
-# fallback for any remaining transitive 4 KB .so not covered by this bump.
-mediapipeTasksVision = "0.10.26"
 
 # Publishing & Docs
 mavenPublish = "0.37.0"
@@ -168,9 +151,6 @@ google-material = { group = "com.google.android.material", name = "material", ve
 androidx-media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", version.ref = "media3" }
 androidx-media3-ui = { group = "androidx.media3", name = "media3-ui", version.ref = "media3" }
 
-# TV
-androidx-tv-foundation = { group = "androidx.tv", name = "tv-foundation", version.ref = "tvFoundation" }
-androidx-tv-material = { group = "androidx.tv", name = "tv-material", version.ref = "tvMaterial" }
 
 # Play Services
 play-app-update = { group = "com.google.android.play", name = "app-update", version.ref = "playAppUpdate" }
@@ -181,11 +161,6 @@ play-services-location = { group = "com.google.android.gms", name = "play-servic
 # so phone apps that don't use it never carry Play Services in their classpath.
 play-services-nearby = { group = "com.google.android.gms", name = "play-services-nearby", version.ref = "playServicesNearby" }
 
-# ML Kit Object Detection — bundled (offline-capable) model used by ARMLObjectLabelDemo.
-# The bundled artifact carries the detector weights inside the APK, so the demo works
-# without the on-device dynamic ML provider being available (#1737).
-mlkit-object-detection = { group = "com.google.mlkit", name = "object-detection", version.ref = "mlkitObjectDetection" }
-mediapipe-tasks-vision = { group = "com.google.mediapipe", name = "tasks-vision", version.ref = "mediapipeTasksVision" }
 
 # Testing
 androidx-test-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestJunit" }
@@ -214,7 +189,6 @@ kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
-compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }
 publish = { id = "com.vanniktech.maven.publish", version.ref = "mavenPublish" }
 dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }
 detekt = { id = "dev.detekt", version.ref = "detekt" }

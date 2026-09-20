@@ -1,86 +1,18 @@
 name: CI
 
-# Single consolidated PR + push workflow (#1370).
-#
-# WHY THIS EXISTS
-# ---------------
-# Until 2026-05-15 every PR fired THREE separate workflows — `ci.yml` (CI),
-# `pr-check.yml` (PR Check) and `quality-gate.yml` (quality-gate) — plus the
-# `CI Gate` aggregator. `ci.yml` and `pr-check.yml` EACH carried their own
-# `changes` "Detect changed paths" job, so `dorny/paths-filter` ran twice per
-# PR, and all three workflows paid checkout + JDK + Gradle-cache-restore
-# independently. #1370 consolidated the three into this one workflow with a
-# SINGLE `changes` path-detection job whose outputs gate every downstream job.
-#
-# Jobs:
-#   - changes        path detection (one dorny/paths-filter run for the whole PR)
-#   - build          libraries + sample APKs        (gated on `android`)
-#   - lint           Android lint                   (gated on `android`)
-#   - unit-test      JVM unit tests (PR-blocking gate) (gated on `android`)
-#   - coverage       JaCoCo coverage (advisory, off the critical path) (gated on `android`)
-#   - web-desktop    Kotlin/JS + Compose Desktop     (gated on `web`)
-#   - flutter-demo   flutter-demo APK               (gated on `flutter`)
-#   - compile-kmp    iOS Kotlin/Native targets       (gated on `kmp`)
-#   - repo-hygiene   grep/validate micro-gates       (always, when workflow runs)
-#   - quality-gate   full .claude/scripts/quality-gate.sh (gated on `quality_gate`)
-#
-# The `CI Gate` aggregator (ci-gate.yml) polls the Checks API for the PR head
-# SHA and treats `skipped` as passing, so it needs NO `needs:` edit when jobs
-# are added/removed here — a path-gated-out job simply reports `skipped`.
-
 on:
   push:
     branches: [main]
-    # NOTE: intentionally a NARROW ignore list — only paths that no job here
-    # exercises. `mcp*/**`, `tools/**` and `.claude/**` are NOT ignored:
-    # `quality-gate` runs MCP unit tests and validates `.claude/scripts`, so
-    # the per-job `changes` filter (not a workflow-level ignore) decides
-    # whether each job runs for those paths.
     paths-ignore:
-      - 'website-static/**'
-      - 'docs/**'
-      - 'marketing/**'
-      - 'branding/**'
       - '*.md'
-      - 'llms*.txt'
       - 'LICENSE'
   pull_request:
     branches: [main]
     paths-ignore:
-      - 'website-static/**'
-      - 'docs/**'
-      - 'marketing/**'
-      - 'branding/**'
       - '*.md'
-      - 'llms*.txt'
       - 'LICENSE'
   workflow_dispatch:
-  # Allows nightly-ci.yml to invoke this workflow as a reusable workflow so
-  # the scheduled full-validation run reuses these job definitions instead
-  # of copy-pasting them. See #1324.
-  workflow_call:
-    inputs:
-      force-all:
-        description: >-
-          Run every job regardless of the path filter. The nightly
-          full-CI safety-net sets this so a path-gated-out regression still
-          gets compiled/tested/built within 24h.
-        type: boolean
-        default: false
 
-# Cancel only a genuinely superseded run, never an unrelated PR's CI (#2089).
-#
-# The old `group: ci-${{ github.ref }}` keyed on `refs/pull/N/merge` for PRs.
-# Merging any PR to `main` makes GitHub recompute EVERY other open PR's merge
-# ref, re-firing their `pull_request` event under the SAME group key — so
-# `cancel-in-progress` killed their in-flight ~30-49 min `Unit tests` job, a
-# cancelled check that left `CI Gate` red and blocked squash auto-merge
-# (bit #2062 and #1818).
-#
-# Keying on the PR HEAD sha instead means a run is cancelled ONLY when a new
-# commit is genuinely pushed to that same PR — a base-ref recompute keeps the
-# head sha unchanged, so other PRs' runs are left alone. `push`/`dispatch`
-# events have no `pull_request` context and fall back to `github.ref`.
 concurrency:
   group: ci-${{ github.event.pull_request.head.sha || github.ref }}
   cancel-in-progress: true
@@ -89,96 +21,36 @@ permissions:
   contents: read
 
 jobs:
-  # ── Path-filter gate ─────────────────────────────────────────────────────
-  # Single path-detection job for the whole PR. Computes which areas of the
-  # repo a PR touched so the build jobs below can each skip when nothing in
-  # their scope changed. The workflow-level `paths-ignore` above already
-  # drops pure docs/website PRs; this finer per-job gate stops, for example,
-  # a Flutter-only change from rebuilding the Android libraries or a web-only
-  # change from rebuilding the Flutter demo. See #1295 / #1370.
-  #
-  # A job that gets `if:`-skipped reports the "skipped" conclusion, which
-  # GitHub treats as success for branch-protection required checks — the
-  # same guarantee the repo already relies on for the workflow-level `paths`
-  # filters in ios.yml / build-apks.yml / telemetry-ci.yml. No check is
-  # renamed, so branch protection (which requires only `CI Gate`) is
-  # unaffected.
   changes:
     name: Detect changed paths
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       android: ${{ steps.filter.outputs.android }}
-      web: ${{ steps.filter.outputs.web }}
-      flutter: ${{ steps.filter.outputs.flutter }}
-      kmp: ${{ steps.filter.outputs.kmp }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
         id: filter
         with:
-          # Conservative bias (#1295): when unsure whether a path is in
-          # scope, INCLUDE it — a needless rebuild is cheaper than a
-          # skipped-but-needed test. `sceneview-core/**` is shared KMP
-          # logic, so it intentionally appears in `android`, `web` and
-          # `kmp`. This workflow file is listed under every filter so a CI
-          # change always re-runs every job. `push` events (branch `main`)
-          # have no PR diff base — the action falls back to comparing
-          # against the previous commit; the workflow-level `paths-ignore`
-          # is the real gate there.
           filters: |
-            shared: &shared
-              - '.github/workflows/ci.yml'
-              - '.github/actions/setup-gradle/**'
+            android:
+              - '.github/**'
               - 'gradle/**'
               - 'build.gradle*'
               - 'settings.gradle*'
               - 'gradle.properties'
               - 'gradlew'
               - 'gradlew.bat'
-            android:
-              - *shared
               - 'sceneview/**'
               - 'arsceneview/**'
               - 'sceneview-core/**'
               - 'samples/android-demo/**'
-              - 'samples/android-tv-demo/**'
               - 'samples/common/**'
-            # `web` gates the Gradle Kotlin/JS build of the sceneview-web
-            # LIBRARY only. samples/web-demo is a plain static site (no
-            # Gradle module since #1946) — it is guarded by the Playwright
-            # suite in device-qa.yml / render-tests.yml, not this job.
-            web:
-              - *shared
-              - 'sceneview-core/**'
-              - 'sceneview-web/**'
-            flutter:
-              - *shared
-              - 'flutter/**'
-              - 'samples/flutter-demo/**'
-            # `kmp` covers everything that affects the iOS Kotlin/Native
-            # compilation of sceneview-core: the KMP module itself, the
-            # Android consumers that share its source set, and sceneview-web.
-            kmp:
-              - *shared
-              - 'sceneview-core/**'
-              - 'arsceneview/**'
-              - 'sceneview/**'
-              - 'sceneview-web/**'
 
-  # ── Android build / test / lint ──────────────────────────────────────────
-  # Gap #6 (#1311): the former single "Build & lint" job ran assembleDebug +
-  # 2 demo APKs + JaCoCo unit tests + lint sequentially (~8.5 min long pole).
-  # It is now split into three jobs that run in parallel on separate runners
-  # and share the same Gradle build cache (the `setup-gradle` composite action
-  # is `cache-read-only` on non-push, so the cache is consistent across them).
-  # Trades a few extra runner-minutes for ~3 min wall-clock. All three are
-  # picked up automatically by the `CI Gate` aggregator (#1314), which polls
-  # every check run for the head SHA rather than using a static `needs:` list.
   build:
     name: Build libraries & samples
     needs: changes
-    if: inputs.force-all || needs.changes.outputs.android == 'true'
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.android == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -189,19 +61,17 @@ jobs:
 
       - name: Build libraries + samples
         env:
-          # Optional. Unset on forks → demo gracefully disables Geospatial/Streetscape.
           ARCORE_API_KEY: ${{ secrets.ARCORE_API_KEY }}
         run: |
           ./gradlew \
             assembleDebug \
             :samples:android-demo:assembleDebug \
-            :samples:android-tv-demo:assembleDebug \
             --stacktrace
 
   lint:
     name: Lint
     needs: changes
-    if: inputs.force-all || needs.changes.outputs.android == 'true'
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.android == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -210,21 +80,9 @@ jobs:
 
       - uses: ./.github/actions/setup-gradle
 
-      - name: Lint
+      - name: Android Lint
         run: ./gradlew :sceneview:lintDebug :arsceneview:lintDebug --stacktrace
 
-      # detekt is applied to every Kotlin Android/KMP subproject in
-      # build.gradle with a hand-tuned config (buildSrc/config/detekt/detekt.yml),
-      # scoped to the three library modules — same scope as the Android Lint step
-      # above.
-      #
-      # BLOCKING: detekt was upgraded from 1.23.8 (which silently no-op'd task
-      # registration on Kotlin 2.3.x / AGP 8.13.x) to detekt 2.0.0-alpha.0 in
-      # #1740. Per-module baselines committed under buildSrc/config/detekt/
-      # grandfather the 200+ pre-existing violations on this legacy codebase;
-      # only NEW violations fail this step. To refresh a baseline after a
-      # cleanup PR, run `./gradlew :<module>:detektBaseline` locally and commit
-      # the regenerated XML.
       - name: Detekt
         run: ./gradlew :sceneview:detekt :arsceneview:detekt :sceneview-core:detekt --stacktrace
 
@@ -249,24 +107,11 @@ jobs:
             arsceneview/build/reports/lint-results-debug.html
           if-no-files-found: ignore
 
-  # ── PR-blocking unit-test gate ───────────────────────────────────────────
-  # The actual pass/fail signal for every PR. Runs the plain
-  # `testDebugUnitTest` suite for the two libraries + the two samples
-  # modules — fast and deterministic. JaCoCo coverage instrumentation +
-  # report generation is deliberately NOT part of this job: it was the slow
-  # pole that tipped the combined "Unit tests + coverage" job over its
-  # 45-min timeout on slow/contended runners (#1554 → #1955), producing a
-  # confusing double-red on the `CI Gate` aggregator. Coverage now lives in
-  # the separate, non-blocking `coverage` job below — see #1955.
   unit-test:
     name: Unit tests
     needs: changes
-    if: inputs.force-all || needs.changes.outputs.android == 'true'
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.android == 'true'
     runs-on: ubuntu-latest
-    # 30 min: the plain `testDebugUnitTest` suite (no JaCoCo instrumentation
-    # / report pass) completes well under 20 min even on a slow runner. The
-    # extra headroom absorbs runner-speed variance. The former 45-min ceiling
-    # was sized for the combined test+JaCoCo run that #1955 split apart.
     timeout-minutes: 30
 
     steps:
@@ -275,16 +120,6 @@ jobs:
       - uses: ./.github/actions/setup-gradle
 
       - name: Unit tests
-        # Plain `testDebugUnitTest` — the PR pass/fail signal, no coverage
-        # instrumentation. JaCoCo runs separately in the `coverage` job.
-        #
-        # `:samples:android-demo:testDebugUnitTest` runs
-        # `ARBundledRecordingsTest` (the bundled-recording ftyp/avc1/mett
-        # contract suite from #1060/#1100).
-        #
-        # `:samples:common:testDebugUnitTest` runs the shared-helper
-        # regression suite — LifecycleAwareLaunchedEffect, LifecyclePauseGate,
-        # rememberMaterialInstance, InAppUpdateManager. See #972.
         run: |
           ./gradlew \
             :sceneview:testDebugUnitTest \
@@ -304,476 +139,3 @@ jobs:
             samples/common/build/reports/tests/
             samples/android-demo/build/reports/tests/
           if-no-files-found: ignore
-
-  # ── JaCoCo coverage (advisory — off the PR-critical path) ────────────────
-  # SEPARATE from the `unit-test` gate above (#1955). JaCoCo instrumentation
-  # + XML/HTML report generation is the slow pole that made the old combined
-  # "Unit tests + coverage" job structurally exceed its timeout on slow
-  # runners (#1554 band-aid was insufficient). Coverage does NOT need to gate
-  # every PR, so it runs here on its own runner with `continue-on-error:
-  # true` — a coverage hiccup is logged and surfaced in the step summary but
-  # never flips the job (and therefore never flips the `CI Gate` aggregator)
-  # red. The job is path-gated on `android` exactly like `unit-test`, so it
-  # is NOT one of ci-gate.yml's `REQUIRED_CHECKS` core checks and a docs-only
-  # PR simply reports it `skipped`.
-  #
-  # `jacocoTestReport` depends on `testDebugUnitTest`, so this job re-runs
-  # the library test suite under instrumentation on its own runner. That is
-  # intentional: the duplicate run is OFF the critical path and the Gradle
-  # build cache (org.gradle.caching=true, configuration-cache enabled, shared
-  # by setup-gradle@v6) keeps it cheap.
-  coverage:
-    name: Coverage (advisory)
-    needs: changes
-    if: inputs.force-all || needs.changes.outputs.android == 'true'
-    runs-on: ubuntu-latest
-    # `continue-on-error` so a coverage failure never blocks a PR — see #1955.
-    continue-on-error: true
-    timeout-minutes: 45
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: ./.github/actions/setup-gradle
-
-      - name: JaCoCo coverage
-        # `jacocoTestReport` depends on `testDebugUnitTest` so Gradle runs
-        # the library tests under instrumentation, drops the exec file under
-        # `outputs/unit_test_code_coverage/`, then generates XML + HTML
-        # reports. See #964.
-        run: |
-          ./gradlew \
-            :sceneview:jacocoTestReport \
-            :arsceneview:jacocoTestReport \
-            --stacktrace
-
-      - name: Coverage summary
-        if: always()
-        # One-line headline per module (line coverage). Doesn't fail the
-        # build on low coverage — establishing a baseline is a follow-up.
-        run: |
-          python3 - <<'PY'
-          import os, sys, xml.etree.ElementTree as ET
-          rows = []
-          for mod in ("sceneview", "arsceneview"):
-              path = f"{mod}/build/reports/jacoco/jacocoTestReport/jacocoTestReport.xml"
-              if not os.path.exists(path):
-                  rows.append(f"{mod}: NO REPORT (jacocoTestReport failed?)")
-                  continue
-              root = ET.parse(path).getroot()
-              for c in root.findall("counter"):
-                  if c.get("type") == "LINE":
-                      covered = int(c.get("covered"))
-                      missed = int(c.get("missed"))
-                      total = covered + missed
-                      pct = 100 * covered / total if total else 0
-                      rows.append(f"{mod}: {pct:.1f}% line ({covered}/{total})")
-                      break
-          print("## JaCoCo coverage")
-          for r in rows:
-              print(f"- {r}")
-          # Also write a step summary so the CI run page surfaces it.
-          summary = os.environ.get("GITHUB_STEP_SUMMARY")
-          if summary:
-              with open(summary, "a") as f:
-                  f.write("## JaCoCo coverage\n")
-                  for r in rows:
-                      f.write(f"- {r}\n")
-          PY
-
-      - name: Coverage delta gate
-        if: always()
-        # Compares this PR's line coverage against the committed baseline in
-        # `.claude/data/jacoco-baseline.txt` and reports whether any module
-        # dropped more than `threshold_pp` (0.5pp default). See #973.
-        #
-        # `continue-on-error: true` keeps it INFORMATIONAL for now — a real
-        # regression is logged loudly and surfaced in the job step summary.
-        # The enclosing `coverage` job is also `continue-on-error: true`
-        # (#1955), so coverage never gates a PR regardless; promote this to a
-        # hard gate by giving the `coverage` job its own required check once
-        # the delta numbers have been green for two consecutive weeks (the
-        # #973 follow-up ratchet step).
-        continue-on-error: true
-        run: |
-          set +e
-          bash .claude/scripts/jacoco-delta-check.sh 2>&1 | tee /tmp/jacoco-delta.log
-          status=${PIPESTATUS[0]}
-          {
-            echo "## JaCoCo coverage delta gate"
-            echo ""
-            echo '```'
-            sed 's/\x1b\[[0-9;]*m//g' /tmp/jacoco-delta.log
-            echo '```'
-            if [ "$status" -ne 0 ]; then
-              echo ""
-              echo "> :warning: Coverage regressed beyond the allowed threshold."
-              echo "> This check is currently **informational** (non-blocking)."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-          exit "$status"
-
-      - name: Upload coverage reports
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: jacoco-coverage
-          path: |
-            sceneview/build/reports/jacoco/jacocoTestReport/
-            arsceneview/build/reports/jacoco/jacocoTestReport/
-          if-no-files-found: warn
-
-  # ── Web & Desktop modules (Kotlin/JS + Compose Desktop) ──────────────────
-  # Job id kept as `web-desktop` for check-run history continuity; it now
-  # builds the web targets only (the desktop-demo placeholder step was
-  # dropped in #1396).
-  web-desktop:
-    name: Build web targets
-    needs: changes
-    if: inputs.force-all || needs.changes.outputs.web == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: ./.github/actions/setup-gradle
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 20
-
-      - name: Build web targets
-        run: |
-          ./gradlew \
-            :sceneview-core:jsMainClasses \
-            :sceneview-web:jsMainClasses \
-            --stacktrace
-
-      # samples/web-demo is a plain static site (HTML + inline JS +
-      # self-hosted sceneview.js) — NOT a Gradle module since #1946 removed
-      # its dead Kotlin/JS source set. There is nothing to compile; the
-      # Playwright suite in samples/web-demo/tests/ (run by render-tests.yml
-      # / device-qa.yml against the served static files) is what guards it.
-
-      # samples/desktop-demo is a deliberate Compose Canvas wireframe
-      # placeholder (Filament JNI is not available on desktop) — it does not
-      # use SceneView or Filament. A compile check that can never fail
-      # (`continue-on-error: true`) only burned runner minutes, so it was
-      # dropped per the drop-or-make-blocking decision in #1396.
-
-      - name: JS tests (informational)
-        continue-on-error: true
-        run: ./gradlew :sceneview-core:jsTest --stacktrace
-
-      # In-browser smoke test of the COMPILED Kotlin/JS bundle (the artifact
-      # published to npm/CDN), against the real Filament WASM module. The
-      # jsTest suite above stubs the Filament externals, so a real init-path
-      # binding crash is invisible to it — this leg builds the production
-      # webpack bundle, stages it with a version-matched filament.js/.wasm, and
-      # drives `createViewer()` in headless chromium (#2410). BLOCKING: a bundle
-      # that cannot initialise in a browser is broken for every consumer.
-      - name: Kotlin/JS bundle in-browser smoke test
-        run: bash .claude/scripts/web-bundle-smoke.sh
-
-      - name: Upload bundle smoke-test artifacts
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: web-bundle-smoke
-          path: samples/web-demo/test-results/
-          if-no-files-found: ignore
-
-  # ── Flutter demo build ──────────────────────────────────────────────────
-  # Protects the Kotlin 2.0 Compose Compiler plugin wiring in
-  # flutter/sceneview_flutter/android/build.gradle. Without this job, a
-  # direct push to main that removes the plugin (or downgrades Kotlin)
-  # only shows up the next time someone runs `flutter build apk`.
-  flutter-demo:
-    name: Build flutter-demo APK
-    needs: changes
-    if: inputs.force-all || needs.changes.outputs.flutter == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: ./.github/actions/setup-gradle
-        with:
-          # Flutter's Android build still uses AGP 7.x-era toolchain
-          # constraints — needs JDK 17 not 21.
-          java-version: "17"
-
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: "3.41.6"
-          channel: stable
-          cache: true
-
-      - name: flutter pub get
-        working-directory: samples/flutter-demo
-        run: flutter pub get
-
-      - name: flutter analyze
-        working-directory: samples/flutter-demo
-        run: flutter analyze --no-fatal-infos --no-fatal-warnings
-
-      - name: flutter build apk --debug
-        working-directory: samples/flutter-demo
-        run: flutter build apk --debug
-
-  # ── KMP core (iOS-only native targets) ──────────────────────────────────
-  # `web-desktop` already compiles the JS KMP targets and `build` consumes
-  # the JVM/Android target via `assembleDebug`. The ONLY KMP targets nothing
-  # else exercises on PR are the iOS Kotlin/Native ones (`ios.yml` builds the
-  # Swift package, not the KMP native targets), so this job is narrowed to
-  # them — the unique PR-time guard on Kotlin/Native compilation. Closes
-  # #1311 gaps #3 + #4. Formerly `pr-check.yml:compile-kmp` (#1370).
-  compile-kmp:
-    name: Compile KMP core
-    needs: changes
-    if: inputs.force-all || needs.changes.outputs.kmp == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: ./.github/actions/setup-gradle
-
-      - name: Compile KMP core (iOS Kotlin/Native targets)
-        run: |
-          ./gradlew \
-            :sceneview-core:compileKotlinIosArm64 \
-            :sceneview-core:compileKotlinIosSimulatorArm64 \
-            :sceneview-core:compileKotlinIosX64 \
-            --stacktrace
-
-  # ── Repo hygiene checks ─────────────────────────────────────────────────
-  # One job consolidating the 5 micro grep/validate gates that used to each
-  # surface as their own top-level status check (see #1305). Each gate runs
-  # as a sequential step; `if: always()` on the later steps means a PR
-  # author sees EVERY violation in a single run instead of fixing them one
-  # check at a time. The job still fails red if any gate fails because each
-  # step's non-zero exit propagates to the job result.
-  #
-  # Not path-gated: these are sub-second greps that validate cross-cutting
-  # invariants (deprecated API names, agent-skill drift, dead SPM URLs,
-  # workflow shell blocks, demo asset refs). Running them on every CI
-  # invocation is cheap insurance. Formerly `pr-check.yml:repo-hygiene`.
-  #
-  # Don't write deprecated composable names verbatim in these comments —
-  # check-deprecated-api.sh greps source files and would flag the comment
-  # itself, as it did on commit ae433620.
-  repo-hygiene:
-    name: Repo hygiene checks
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-
-      # Deprecated API regression detector — sub-second guard against AI
-      # sessions reintroducing the pre-v3.6 composable names (renamed in
-      # commit e6a26a06).
-      - name: Check for deprecated SceneView API refs
-        shell: bash
-        run: bash .claude/scripts/check-deprecated-api.sh --all
-
-      # SceneView agent skill drift detector — catches hallucinated APIs in
-      # agents/sceneview/ (e.g. `rememberARSession` or `AnchorNode.image()`)
-      # BEFORE merge — see PR #1072 for the kind of drift this prevents.
-      - name: Check SceneView agent skill is in sync with source
-        if: always()
-        shell: bash
-        run: bash .claude/scripts/check-sceneview-skill.sh
-
-      # Archived SPM mirror URL guard — the `sceneview/sceneview-swift` SPM
-      # mirror was archived in PR #1215; SceneViewSwift now resolves from the
-      # monorepo root Package.swift. Any NEW reference to the dead mirror URL
-      # points users at a dead resolution path. Closes #1237.
-      - name: Forbid archived sceneview-swift mirror URLs
-        if: always()
-        shell: bash
-        run: bash .claude/scripts/check-sceneview-swift-urls.sh
-
-      # Workflow shell-block validation — pre-validates `script:` blocks in
-      # every .github/workflows/*.yml against `dash` so we catch bashisms
-      # before they ship to CI. Closes #1114.
-      - name: Install dash + shellcheck
-        if: always()
-        shell: bash
-        run: |
-          # Both ship in ubuntu-latest, but pin explicitly so the job is
-          # self-contained on any runner image refresh.
-          if ! command -v dash >/dev/null 2>&1; then
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq dash
-          fi
-          if ! command -v shellcheck >/dev/null 2>&1; then
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq shellcheck
-          fi
-          # PyYAML — already in the runner image, but assert.
-          # Fallback deps live in a requirements file so Dependabot tracks them (#1286).
-          python3 -c "import yaml" || pip install --quiet -r .github/workflows/requirements/ci.txt
-
-      - name: Validate workflow shell blocks (dash + shellcheck)
-        if: always()
-        shell: bash
-        run: bash .claude/scripts/check-workflow-scripts.sh
-
-      # CI Gate aggregation regression suite — pins the advisory-exclusion
-      # rule so a concurrency-CANCELLED advisory check can never red-light
-      # the `CI Gate` aggregator again (#1984, found unsticking PR #1889).
-      - name: Test CI Gate aggregation logic
-        if: always()
-        shell: bash
-        run: bash .github/scripts/test-ci-gate-aggregation.sh
-
-      # Demo app asset integrity — catches broken model/HDR references in
-      # any samples/* demo app, both for bundled file paths and CDN URLs.
-      # Self-test first so a regressed validator can't report a false PASS.
-      - name: Self-test validate-demo-assets.sh
-        if: always()
-        shell: bash
-        run: bash .claude/scripts/test-validate-demo-assets.sh
-
-      - name: Validate demo app asset references
-        if: always()
-        shell: bash
-        run: bash .claude/scripts/validate-demo-assets.sh
-
-      # Doc-drift detector self-test — a regressed detector that silently
-      # PASSes is worse than none, so pin its contract before trusting it.
-      - name: Self-test check-doc-drift.sh
-        if: always()
-        shell: bash
-        run: bash .claude/scripts/test-check-doc-drift.sh
-
-      # Doc↔API drift (ADVISORY, #docs). Warns when this PR changed a public
-      # API surface without updating llms.txt / KDoc / docs/docs / recipes.
-      # AI-first SDK: stale prose makes AI emit stale user code. Non-blocking
-      # by design (heuristic → false positives would erode trust); the weekly
-      # `doc-audit.yml` agent does the deep semantic pass + proposes patches.
-      - name: Doc-drift check (advisory)
-        if: always()
-        shell: bash
-        run: bash .claude/scripts/check-doc-drift.sh
-
-      # Stale demo-class / demo-id reference guard self-test — pin the guard's
-      # contract (catches deletions, ignores live iOS .swift refs + plain-prose
-      # phrases) before trusting it. Same self-test-first discipline as above.
-      - name: Self-test check-demo-class-refs.sh
-        if: always()
-        shell: bash
-        run: bash .claude/scripts/test-check-demo-class-refs.sh
-
-      # Stale demo-class / demo-id refs in AI-facing prose (ADVISORY, #docs,
-      # #2316). A demo deleted/merged (the #2239 consolidation) leaves its
-      # Kotlin class name / retired deep-link id in hand-written prose outside
-      # the collator-generated block — teaching an AI to reference a file/id
-      # that no longer exists. Advisory like check-doc-drift.sh: surfaces the
-      # finding, never blocks (a false positive would erode trust).
-      - name: Stale demo-class reference check (advisory)
-        if: always()
-        shell: bash
-        run: bash .claude/scripts/check-demo-class-refs.sh
-
-      # impact-check.sh self-test — pin its lean/sparse-clone contract (#2370):
-      # a partial node-source checkout SKIPs (never FALSE-FAILs), a complete
-      # checkout still flags a real count mismatch, and missing HEAD~1 (shallow
-      # history) never crashes it. Same self-test-first discipline as above.
-      - name: Self-test impact-check.sh
-        if: always()
-        shell: bash
-        run: bash .claude/scripts/test-impact-check.sh
-
-  # ── Full quality gate ────────────────────────────────────────────────────
-  # Runs the same .claude/scripts/quality-gate.sh that contributors run
-  # locally before pushing. Includes:
-  #   - Version sync across all modules
-  #   - Security checks (no secrets, no tracked local.properties)
-  #   - Deprecated SceneView API detector
-  #   - Demo app asset integrity (bundled refs + CDN URLs)
-  #   - MCP unit tests
-  #   - Website asset rules (no Google Fonts, Three.js, model-viewer, CDNs)
-  # The Android assembleDebug + unit tests are skipped here
-  # (QUALITY_GATE_SKIP_ANDROID=1) because the `build` / `unit-test` jobs
-  # above already run them in parallel. Formerly `quality-gate.yml` (#1370).
-  #
-  # Not path-gated: the former quality-gate.yml had only a workflow-level
-  # `paths-ignore` (no per-job filter), so it ran on every non-docs PR.
-  # The workflow-level `paths-ignore` above already drops docs PRs, so this
-  # job runs whenever the workflow runs — same scope as before. The `push`
-  # trigger preserves the `Quality gate (full)` check on `main` pushes.
-  quality-gate:
-    name: Quality gate (full)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    steps:
-      - name: Checkout
-        # Gap #10 (#1311): the default shallow checkout (fetch-depth: 1) is
-        # sufficient. quality-gate.sh only runs `git diff HEAD`,
-        # `git diff --cached`, `git ls-files` and `git branch --show-current`
-        # — all of which resolve against the working tree / HEAD, never an
-        # older commit. sync-versions.sh compares files with plain `diff`, no
-        # git history.
-        uses: actions/checkout@v7
-
-      # Shared composite: JDK 21 + Gradle cache + gradle-wrapper.jar SHA
-      # validation + chmod +x ./gradlew. Replaces the formerly hand-rolled
-      # setup-java / setup-gradle / chmod steps so this job also gets the
-      # wrapper-validation supply-chain guard every other Gradle job has (#1708).
-      - uses: ./.github/actions/setup-gradle
-
-      - uses: ./.github/actions/setup-mcp
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v4
-
-      - name: Write local.properties
-        # quality-gate.sh invokes ./gradlew, which needs sdk.dir on Linux runners.
-        run: echo "sdk.dir=$ANDROID_HOME" > local.properties
-
-      - name: Run quality gate
-        shell: bash
-        env:
-          # Optional. Demo runtime disables Geospatial when unset.
-          ARCORE_API_KEY: ${{ secrets.ARCORE_API_KEY }}
-          # The `build` / `unit-test` / `coverage` jobs already run
-          # `assembleDebug` + the same unit-test set + JaCoCo coverage in
-          # parallel with this gate. Skipping the duplicate Android
-          # build/test work here keeps the gate focused on what it owns
-          # uniquely: version sync, security scans, asset CDN integrity,
-          # website rules, MCP tests, agent skill drift.
-          QUALITY_GATE_SKIP_ANDROID: "1"
-        run: bash .claude/scripts/quality-gate.sh
-
-      - name: Upload validate-demo-assets log
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: validate-demo-assets-log
-          path: /tmp/validate-demo-assets.log
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Upload check-deprecated-api log
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: check-deprecated-api-log
-          path: /tmp/check-deprecated-api.log
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Upload check-sceneview-skill log
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: check-sceneview-skill-log
-          path: /tmp/check-sceneview-skill.log
-          if-no-files-found: ignore
-          retention-days: 7

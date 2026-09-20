@@ -15,35 +15,11 @@ plugins {
     alias(libs.plugins.kotlin.android) apply false
     alias(libs.plugins.kotlin.multiplatform) apply false
     alias(libs.plugins.compose.compiler) apply false
-    alias(libs.plugins.compose.multiplatform) apply false
     alias(libs.plugins.dokka) apply false
     alias(libs.plugins.publish) apply false
     alias(libs.plugins.detekt) apply false
 }
 
-// Force patched versions of transitive npm dependencies (Dependabot security alerts)
-plugins.withType(org.jetbrains.kotlin.gradle.targets.js.yarn.YarnPlugin) {
-    extensions.getByType(org.jetbrains.kotlin.gradle.targets.js.yarn.YarnRootExtension).tap {
-        resolution("serialize-javascript", ">=7.0.3")
-        // webpack 5.107.0 moved `lib/ModuleNotFoundError.js` →
-        // `lib/errors/ModuleNotFoundError.js`. `kotlin-web-helpers` (bundled
-        // with the Kotlin/JS Gradle plugin) still does:
-        //   require("webpack/lib/ModuleNotFoundError")
-        // in `dist/tc-log-error-webpack.js`, so every webpack-driven task
-        // crashes with `Cannot find module 'webpack/lib/ModuleNotFoundError'`
-        // — and karma surfaces it as a confusing top-of-stack `karma/bin/karma`
-        // line (see #1785). Covers:
-        //   • :sceneview-web:jsBrowserProductionWebpack (sceneview-web npm
-        //     publish — original repro that motivated #1791)
-        //   • :sceneview-web:jsBrowserDistribution
-        //   • :sceneview-web:jsTest (karma → webpack preprocessor)
-        // Cap at <5.107.0 until kotlin-web-helpers ships a fix.
-        resolution("webpack", ">=5.104.1 <5.107.0")
-        resolution("webpack-dev-server", ">=5.2.1")
-        resolution("path-to-regexp", ">=0.2.2")
-        resolution("brace-expansion", ">=1.1.13")
-    }
-}
 
 subprojects {
     plugins.withId("com.vanniktech.maven.publish") {

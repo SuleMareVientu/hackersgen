@@ -160,8 +160,6 @@ jobs:
           # Keep in sync with the un-`if:`-gated job `name:`s in ci.yml.
           REQUIRED_CHECKS: |
             Detect changed paths
-            Repo hygiene checks
-            Quality gate (full)
           # Advisory check-run names — substring-matched, newline-separated.
           # An advisory check (e.g. `Coverage (advisory)`, made advisory by
           # #1959/#1955) must NEVER affect the gate verdict, for ANY

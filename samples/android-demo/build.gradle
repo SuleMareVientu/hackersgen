@@ -232,7 +232,6 @@ task downloadXFeatModel {
 def fragmentsDir = file("src/main/java/io/github/sceneview/demo/fragments")
 def valuesDir = file("src/main/res/values")
 def generatedDemosFile = file("src/main/java/io/github/sceneview/demo/fragments/GeneratedDemos.kt")
-def llmsFile = rootProject.file("llms.txt")
 
 /**
  * Portable implementation of the demo registry collator.
@@ -323,105 +322,6 @@ def generateDemoRegistry = tasks.register("generateDemoRegistry") {
     }
 }
 
-/**
- * Portable implementation of the full demo collator (llms.txt update).
- * Matches the logic in collate-demos.sh.
- */
-def collateDemos = tasks.register("collateDemos") {
-    description = "Full demo collation (GeneratedDemos.kt + llms.txt)."
-    group = "documentation"
-
-    dependsOn(generateDemoRegistry)
-
-    inputs.dir(fragmentsDir)
-    inputs.dir(valuesDir)
-    inputs.file(llmsFile)
-    outputs.file(llmsFile)
-
-    doLast {
-        def fragments = getDemoMetadata()
-
-        // 1. Resolve strings
-        def resolveString = { key ->
-            def files = valuesDir.listFiles().findAll { it.name.endsWith(".xml") }
-            for (file in files) {
-                def text = file.text
-                def matcher = (text =~ /(?s)<string name="${key}"[^>]*>(.*?)<\/string>/)
-                if (matcher.find()) {
-                    return matcher.group(1)
-                            .replace("&amp;", "&")
-                            .replace("&apos;", "'")
-                            .replace("&quot;", "\"")
-                            .replace("&lt;", "<")
-                            .replace("&gt;", ">")
-                }
-            }
-            logger.warn("⚠️  Could not resolve string resource R.string.${key}")
-            return "!! MISSING R.string.${key} !!"
-        }
-
-        def categoryDisplay = { key ->
-            switch (key) {
-                case "BASICS_3D": return "3D Basics"
-                case "LIGHTING_ENVIRONMENT": return "Lighting & Environment"
-                case "CONTENT": return "Content"
-                case "INTERACTION": return "Interaction"
-                case "ADVANCED": return "Advanced"
-                case "AUGMENTED_REALITY": return "Augmented Reality"
-                default: return "Unknown Category"
-            }
-        }
-
-        // 2. Build the llms.txt block
-        def beginMarker = "<!-- BEGIN GENERATED DEMOS — DO NOT EDIT — run samples/android-demo/scripts/collate-demos.sh -->"
-        def endMarker = "<!-- END GENERATED DEMOS -->"
-        def categoryOrder = ["BASICS_3D", "CONTENT", "AUGMENTED_REALITY"]
-
-        def newBlock = new StringBuilder()
-        newBlock.append("${beginMarker}\n\n")
-        newBlock.append("## Sample app demos (Android)\n\n")
-        newBlock.append("Every demo bundled in `samples/android-demo` (the Play Store showcase).\n")
-        newBlock.append("Each demo is addressable through the deep-link router as `sceneview://demo/<id>`\n")
-        newBlock.append("and surfaces in the Samples tab. This section is generated from the per-demo\n")
-        newBlock.append("fragments under `samples/android-demo/src/main/java/io/github/sceneview/demo/fragments/`\n")
-        newBlock.append("by `samples/android-demo/scripts/collate-demos.sh` — never edit between the markers (#1871).\n")
-
-        categoryOrder.each { catKey ->
-            def catFragments = fragments.findAll { it.category == catKey }
-            if (catFragments) {
-                newBlock.append("\n### ${categoryDisplay(catKey)}\n\n")
-                catFragments.each { frag ->
-                    def title = resolveString(frag.titleRes)
-                    def subtitle = resolveString(frag.subtitleRes)
-                    newBlock.append("- `${frag.id}` — ${title}. ${subtitle}.\n")
-                }
-            }
-        }
-        newBlock.append("\n${endMarker}")
-
-        // 3. Splice into llms.txt
-        def llmsText = llmsFile.text
-        def splicedText
-        if (llmsText.contains(beginMarker)) {
-            splicedText = llmsText.replaceAll(/(?s)${beginMarker}.*?${endMarker}/, newBlock.toString())
-        } else {
-            // First time install anchor
-            def anchor = "## Sketchfab streaming for samples"
-            if (llmsText.contains(anchor)) {
-                splicedText = llmsText.replace(anchor, "${newBlock.toString()}\n\n---\n\n${anchor}")
-            } else {
-                throw new GradleException("Could not find splice anchor in llms.txt")
-            }
-        }
-
-        if (llmsText != splicedText) {
-            llmsFile.text = splicedText
-            logger.lifecycle("✅ Updated llms.txt with ${fragments.size()} demos.")
-        } else {
-            logger.lifecycle("✅ llms.txt is already up to date.")
-        }
-    }
-}
 
 // Make every Kotlin compilation (debug/release, app + unit tests) depend on the
 // generator so a fresh checkout always has GeneratedDemos.kt before kotlinc runs.

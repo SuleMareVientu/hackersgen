@@ -38,27 +38,6 @@ updates:
       - dependency-name: "androidx.compose.material3:material3"
         versions: [">=1.5.0-alpha19"]
 
-  # npm — MCP server
-  - package-ecosystem: "npm"
-    directory: "/mcp"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    labels:
-      - "dependencies"
-    commit-message:
-      prefix: "chore(mcp)"
-
-  # npm — website JS
-  - package-ecosystem: "npm"
-    directory: "/website-static/js"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    labels:
-      - "dependencies"
-    commit-message:
-      prefix: "chore(web)"
 
   # pip — Python deps installed inside CI/publish workflows.
   # The deps live in .github/workflows/requirements/*.txt (one file per

@@ -21,12 +21,8 @@ include(FetchContent)
 
 
 
-# 2. Fetch LiteRT Core AAR (as a zip archive)
-FetchContent_Declare(
-  tflite_aar
-  URL https://dl.google.com/dl/android/maven2/com/google/ai/edge/litert/litert/2.1.6/litert-2.1.6.aar
-)
-FetchContent_MakeAvailable(tflite_aar)
+# 2. LiteRT Core shared library (from local organized libs folder)
+set(LITERT_JNI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../libs/litert/jni/${ANDROID_ABI}")
 
 # Fetch TensorFlow Lite Headers
 FetchContent_Declare(
@@ -38,7 +34,7 @@ FetchContent_MakeAvailable(tflite_headers)
 # Define imported shared libraries for LiteRT
 add_library(tensorflow-lite SHARED IMPORTED)
 set_target_properties(tensorflow-lite PROPERTIES
-    IMPORTED_LOCATION ${tflite_aar_SOURCE_DIR}/jni/${ANDROID_ABI}/libLiteRt.so
+    IMPORTED_LOCATION "${LITERT_JNI_DIR}/libLiteRt.so"
 )
 
 # 3. Fetch opencv-mobile

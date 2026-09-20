@@ -5,29 +5,16 @@
 | Resource | Link |
 |----------|------|
 | **Website** | [sceneview.github.io](https://sceneview.github.io) |
-| **GitHub README** | [README](https://github.com/sceneview/sceneview#readme) |
-| **Samples** | [samples/](https://github.com/sceneview/sceneview/tree/main/samples) |
-| **API Reference** | [llms.txt](https://github.com/sceneview/sceneview/blob/main/llms.txt) |
-| **Migration Guide** | [MIGRATION.md](https://github.com/sceneview/sceneview/blob/main/MIGRATION.md) |
+| **README** | [README](../README.md) |
+| **Samples** | [samples/](../samples) |
 
 ## Getting Help
 
 ### 1. Check the Documentation First
 
-Most questions are answered in the README and docs:
-- [README](https://github.com/sceneview/sceneview#readme) — Quick start, install, API overview
-- [llms.txt](https://github.com/sceneview/sceneview/blob/main/llms.txt) — Complete API reference
-- [Migration Guide](https://github.com/sceneview/sceneview/blob/main/MIGRATION.md) — Upgrading from v2.x to v3.x
-
-### 2. Ask AI Assistants
-
-SceneView has an **MCP server** that gives AI assistants complete knowledge of the SDK:
-
-```bash
-npx sceneview-mcp
-```
-
-Configure it in Claude Desktop, Cursor, or any MCP-compatible tool. The AI will generate correct, compilable SceneView code.
+Most questions are answered in the README and samples:
+- [README](../README.md) — Quick start, install, API overview
+- [samples/](../samples) — Sample apps and implementation patterns
 
 ### 3. Discord Community
 

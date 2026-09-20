@@ -126,49 +126,6 @@ jobs:
           exempt-issue-labels: 'pinned,roadmap,in-progress'
           exempt-pr-labels: 'pinned'
 
-  # ── 3. SceneView agent skill drift ────────────────────────────────────────
-  # Catches the case where a library API was renamed/removed between releases
-  # without updating `agents/sceneview/` (the published agent skill). Daily
-  # cadence is enough — the same check also runs on every PR via ci.yml's
-  # `repo-hygiene` job.
-  skill-drift:
-    name: SceneView agent skill drift
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      issues: write
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Run skill drift check
-        id: drift
-        shell: bash
-        run: |
-          if bash .claude/scripts/check-sceneview-skill.sh > skill-drift.log 2>&1; then
-            echo "drift=0" >> $GITHUB_OUTPUT
-          else
-            echo "drift=1" >> $GITHUB_OUTPUT
-            cat skill-drift.log
-          fi
-
-      - name: Open or update tracking issue
-        if: steps.drift.outputs.drift == '1'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          EXISTING=$(gh issue list --state open --search "Agent skill drift detected" --json number --jq '.[0].number' 2>/dev/null || echo "")
-          BODY=$'Daily maintenance detected drift between `agents/sceneview/` and the SceneView library source.\n\n```\n'"$(cat skill-drift.log)"$'\n```\n\nRun `bash .claude/scripts/check-sceneview-skill.sh` locally and update the skill from real demos / `llms.txt`.'
-          if [ -z "$EXISTING" ]; then
-            gh issue create \
-              --title "Agent skill drift detected — $(date +%Y-%m-%d)" \
-              --body "$BODY" \
-              --label "agent-skill,maintenance" \
-              || echo "::warning::Could not create skill drift issue"
-          else
-            gh issue comment "$EXISTING" --body "$BODY" \
-              || echo "::warning::Could not comment on existing skill drift issue #$EXISTING"
-          fi
 
   # ── 4. CI health summary ──────────────────────────────────────────────────
   ci-health:
@@ -259,82 +216,6 @@ jobs:
               || echo "::warning::Could not comment on digest issue #$EXISTING"
           fi
 
-  # ── 6. GitHub Pages freshness check ───────────────────────────────────────
-  # The live site at https://sceneview.github.io is published by docs.yml,
-  # which pushes to the external `sceneview/sceneview.github.io` repo over an
-  # SSH deploy key. GitHub's legacy Pages auto-build does NOT fire for
-  # bot/deploy-key pushes, so the site can silently stop rebuilding even
-  # though new commits keep landing (#1826 — 13 days stuck on an old
-  # version). docs.yml now force-triggers a build via the Pages API, but
-  # that depends on a PAT secret being present and the API call succeeding.
-  # This job is the safety net: it compares the latest commit on
-  # `sceneview.github.io` against its latest Pages BUILD and alerts if the
-  # site is behind by more than a day.
-  pages-freshness:
-    name: GitHub Pages freshness check
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      issues: write
-    steps:
-      - name: Check sceneview.github.io build freshness
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          REPO="sceneview/sceneview.github.io"
-
-          # Latest commit timestamp on the published branch.
-          LATEST_COMMIT_DATE=$(gh api "repos/$REPO/commits?per_page=1" \
-            --jq '.[0].commit.committer.date' 2>/dev/null || echo "")
-          # Latest Pages BUILD timestamp (the actual site rebuild).
-          LATEST_BUILD_DATE=$(gh api "repos/$REPO/pages/builds/latest" \
-            --jq '.created_at' 2>/dev/null || echo "")
-
-          echo "Latest commit on $REPO : ${LATEST_COMMIT_DATE:-unknown}"
-          echo "Latest Pages build     : ${LATEST_BUILD_DATE:-unknown}"
-
-          if [ -z "$LATEST_COMMIT_DATE" ] || [ -z "$LATEST_BUILD_DATE" ]; then
-            echo "::warning::Could not read commit/build timestamps — skipping check."
-            exit 0
-          fi
-
-          COMMIT_TS=$(date -d "$LATEST_COMMIT_DATE" +%s 2>/dev/null || echo 0)
-          BUILD_TS=$(date -d "$LATEST_BUILD_DATE" +%s 2>/dev/null || echo 0)
-          # Lag = how far the published build trails the latest commit.
-          LAG=$(( COMMIT_TS - BUILD_TS ))
-          LAG_HOURS=$(( LAG / 3600 ))
-          echo "Build trails latest commit by ${LAG_HOURS}h."
-
-          # Allow 24h of slack — a commit can land just before this cron.
-          if [ "$LAG" -le 86400 ]; then
-            echo "GitHub Pages is fresh."
-            exit 0
-          fi
-
-          echo "::warning::sceneview.github.io has unbuilt commits for ${LAG_HOURS}h."
-          TITLE="GitHub Pages build is stale — sceneview.github.io"
-          BODY="Automated maintenance detected that **https://sceneview.github.io** has not rebuilt for the latest commits.
-
-          - Latest commit on \`$REPO\`: \`$LATEST_COMMIT_DATE\`
-          - Latest Pages build:          \`$LATEST_BUILD_DATE\`
-          - Build trails the latest commit by **~${LAG_HOURS}h**.
-
-          The site is serving stale content. GitHub Pages' legacy auto-build does not fire for the SSH deploy-key pushes \`docs.yml\` makes. \`docs.yml\` force-triggers a build via the Pages API after each deploy — if this issue is open, that trigger is failing.
-
-          **To fix:** re-run \`docs.yml\` (workflow_dispatch), or manually \`gh api -X POST repos/$REPO/pages/builds\`, then confirm the \`PERSONAL_TOKEN\`/\`PAGES_REBUILD_TOKEN\` secret has \`repo\`/\`pages:write\` scope. Background: #1826."
-          EXISTING=$(gh issue list --repo "${{ github.repository }}" --state open \
-            --search "GitHub Pages build is stale in:title" \
-            --json number --jq '.[0].number' 2>/dev/null || echo "")
-          if [ -z "$EXISTING" ]; then
-            gh issue create --repo "${{ github.repository }}" \
-              --title "$TITLE" \
-              --body "$BODY" \
-              --label "bug,maintenance" \
-              || echo "::warning::Could not create Pages staleness issue"
-          else
-            echo "Pages staleness issue #$EXISTING already open — skipping duplicate."
-          fi
 
   # ── 7. Deep-link verification health ──────────────────────────────────────
   # The demo apps' QR-code → demo-screen flow rides on VERIFIED deep links:
@@ -389,39 +270,6 @@ jobs:
             echo "Deep-link health issue #$EXISTING already open — skipping duplicate."
           fi
 
-  # ── 8. Stale claude/* branch cleanup ──────────────────────────────────────
-  # PRIMARY mechanism is the repo's "Automatically delete head branches"
-  # setting (deleteBranchOnMerge) — every PR branch is dropped the instant
-  # its PR merges, so no backlog accumulates in normal operation.
-  # This job is the BACKSTOP for the cases that setting can't reach:
-  # branches whose PR merged before the setting was on, orphan branches
-  # fully merged into main with no PR (ahead=0), and merged-PR branches
-  # left over from API merges. It deletes the provably-dead ones — merged
-  # into origin/main (ahead=0) OR carrying a MERGED PR (squash-merge case) —
-  # in a SINGLE `git push --delete` call. Branches with an OPEN PR or genuine
-  # unmerged commits are never touched. Worktrees are skipped (they only
-  # exist on local checkouts, not in CI).
-  branch-cleanup:
-    name: Prune merged claude/* branches
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: write       # git push --delete
-      pull-requests: read   # gh pr view (open-PR guard)
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0    # full history — ahead-count needs all refs
-
-      - name: Prune merged remote branches
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # --yes  : perform the deletion (merged == dead, safe to act).
-          # --no-worktrees : CI has no .claude/worktrees/ checkouts.
-          # The script's own guards (current branch, ahead>0, open PR)
-          # protect every branch that still carries live work.
-          bash .claude/scripts/cleanup-branches-worktrees.sh --yes --no-worktrees
 
   # ── 9. Play Store reviews & ratings ingest ────────────────────────────────
   # The empire dashboard aggregates npm downloads + GitHub stars, but the Play
@@ -582,60 +430,3 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # ── 9. sceneview-mcp npm freshness ─────────────────────────────────────────
-  # sceneview-mcp is on an INDEPENDENT npm track (#1705) — it does NOT ship on
-  # every SDK release, so it silently rots when mcp/ changes without a tag (it
-  # fell a month behind at 4.0.12). WARN-only: if the local mcp/package.json
-  # version is ahead of npm, remind a maintainer to dispatch mcp-publish.yml.
-  mcp-npm-freshness:
-    name: MCP npm freshness
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      issues: write
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "20"
-
-      - name: Compare local mcp/package.json against published npm
-        id: check
-        run: |
-          set -euo pipefail
-          LOCAL=$(node -p "require('./mcp/package.json').version")
-          NPM=$(npm view sceneview-mcp version 2>/dev/null || echo "unknown")
-          echo "local=$LOCAL  npm=$NPM"
-          echo "local=$LOCAL" >> "$GITHUB_OUTPUT"
-          echo "npm=$NPM" >> "$GITHUB_OUTPUT"
-          # `sort -V` puts the lower semver first. A lag means npm < local, i.e.
-          # local is NOT the first line. Equal versions = in sync (no lag).
-          if [ "$NPM" = "unknown" ] || [ "$LOCAL" = "$NPM" ]; then
-            echo "lag=false" >> "$GITHUB_OUTPUT"
-          elif [ "$(printf '%s\n%s\n' "$LOCAL" "$NPM" | sort -V | head -1)" = "$NPM" ]; then
-            echo "::warning::sceneview-mcp npm ($NPM) lags local mcp/package.json ($LOCAL) — dispatch mcp-publish.yml to republish."
-            echo "lag=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "lag=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Open or update tracking issue
-        if: steps.check.outputs.lag == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          LOCAL='${{ steps.check.outputs.local }}'
-          NPM='${{ steps.check.outputs.npm }}'
-          TITLE="sceneview-mcp npm is stale ($NPM < $LOCAL)"
-          BODY=$'Daily maintenance found `sceneview-mcp` on npm is **'"$NPM"$'**, behind the local `mcp/package.json` (**'"$LOCAL"$'**).\n\nThe MCP is on an independent npm track (#1705) and does not ship on every SDK tag. Republish it on demand (no tag needed):\n\n```\ngh workflow run mcp-publish.yml -R sceneview/sceneview --ref main\n```\n\nThe dispatch is idempotent — if the version is already on npm it logs a notice and succeeds.'
-          EXISTING=$(gh issue list --state open --search "sceneview-mcp npm is stale in:title" --json number --jq '.[0].number' 2>/dev/null || echo "")
-          if [ -z "$EXISTING" ]; then
-            gh issue create --title "$TITLE" --body "$BODY" --label "maintenance" \
-              || echo "::warning::Could not create MCP npm freshness issue"
-          else
-            gh issue comment "$EXISTING" --body "$BODY" \
-              || echo "::warning::Could not comment on existing MCP npm freshness issue #$EXISTING"
-          fi
