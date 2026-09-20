@@ -2,49 +2,17 @@ name: Bug report
 description: Something isn't working as expected
 labels: [bug]
 body:
-  - type: markdown
-    attributes:
-      value: |
-        Before filing: check the [migration guide](../MIGRATION.md) if you upgraded from v2.
-
-  - type: dropdown
-    id: platform
-    attributes:
-      label: Platform
-      description: Which platform are you using?
-      options:
-        - Android
-        - iOS
-        - macOS
-        - visionOS
-        - Web
-        - Desktop
-        - Android TV
-        - Flutter
-        - React Native
-    validations:
-      required: true
-
   - type: dropdown
     id: module
     attributes:
       label: Module
+      description: Which module does this bug affect?
       options:
-        - sceneview (3D only)
-        - arsceneview (AR)
-        - SceneViewSwift (Apple)
-        - sceneview-web (Web)
-        - sceneview-core (KMP)
-        - MCP server
+        - samples:android-demo (OpenSplat demo & training app)
+        - sceneview (3D Compose runtime)
+        - arsceneview (ARCore Compose integration)
+        - sceneview-core (Math & collision core)
         - Other
-    validations:
-      required: true
-
-  - type: input
-    id: version
-    attributes:
-      label: SceneView version
-      placeholder: "4.18.0"
     validations:
       required: true
 
@@ -52,7 +20,7 @@ body:
     id: device
     attributes:
       label: Device / OS
-      placeholder: "Pixel 8 Pro — Android 14 / iPhone 15 Pro — iOS 17.4"
+      placeholder: "Pixel 8 Pro — Android 15"
     validations:
       required: true
 

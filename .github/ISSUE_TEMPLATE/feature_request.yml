@@ -3,22 +3,16 @@ description: Suggest a new feature or API improvement
 labels: [enhancement]
 body:
   - type: dropdown
-    id: platform
+    id: module
     attributes:
-      label: Platform
-      description: Which platform is this for?
-      multiple: true
+      label: Module
+      description: Which module is this feature request for?
       options:
-        - Android
-        - iOS
-        - macOS
-        - visionOS
-        - Web
-        - Desktop
-        - Android TV
-        - Flutter
-        - React Native
-        - All platforms
+        - samples:android-demo (OpenSplat demo & training app)
+        - sceneview (3D Compose runtime)
+        - arsceneview (ARCore Compose integration)
+        - sceneview-core (Math & collision core)
+        - Other (samples, docs)
     validations:
       required: true
 
@@ -34,28 +28,13 @@ body:
     id: proposal
     attributes:
       label: Proposed API / behaviour
-      description: Show what the code would look like with your proposed change.
+      description: Show what the code or API would look like with your proposed change.
 
   - type: textarea
     id: alternatives
     attributes:
       label: Alternatives considered
       description: What other approaches have you considered? Why are they insufficient?
-
-  - type: dropdown
-    id: module
-    attributes:
-      label: Module
-      options:
-        - sceneview (3D only)
-        - arsceneview (AR)
-        - SceneViewSwift (Apple)
-        - sceneview-web (Web)
-        - sceneview-core (KMP)
-        - MCP server
-        - Other (samples, docs)
-    validations:
-      required: true
 
   - type: checkboxes
     id: contribution
