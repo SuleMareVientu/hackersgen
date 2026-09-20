@@ -55,8 +55,8 @@
     <string name="about_card_github_subtitle">Source, issues, releases</string>
     <string name="about_star_on_github">Star on GitHub</string>
     <string name="about_made_with">Made with</string>
-    <string name="about_made_by">by Thomas Gorisse, sulemarevientu &amp; k1chi</string>
-    <string name="about_made_by_team">and the OpenSplat &amp; SceneView contributors</string>
+    <string name="about_made_by"> by SuleMareVientu &amp; k1chi</string>
+    <string name="about_made_by_team">and the SceneView contributors</string>
 
     <!-- Demo settings & controls -->
     <string name="demo_settings_title">Settings</string>

@@ -194,10 +194,7 @@ private fun AboutTabContent() {
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
-            ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     stringResource(R.string.about_made_with) + " ",
                     style = MaterialTheme.typography.bodySmall,
@@ -209,20 +206,16 @@ private fun AboutTabContent() {
                     tint = Color(0xFFE91E63),
                     modifier = Modifier.size(14.dp),
                 )
+                Text(
+                    stringResource(R.string.about_made_by),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
-            Spacer(Modifier.height(2.dp))
-            Text(
-                stringResource(R.string.about_made_by),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
-            Spacer(Modifier.height(2.dp))
             Text(
                 stringResource(R.string.about_made_by_team),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
             )
         }
     }
