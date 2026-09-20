@@ -3,6 +3,9 @@
     <string name="app_name">OpenSplat</string>
 
     <!-- Navigation -->
+    <string name="tab_capture">Capture</string>
+    <string name="tab_training">Training</string>
+    <string name="tab_library">Library</string>
     <string name="tab_samples">Samples</string>
     <string name="tab_about">About</string>
 
@@ -100,4 +103,42 @@
     <string name="feedback_report_open_github">Open a GitHub issue</string>
     <string name="feedback_report_share_chooser">Share bug report</string>
     <string name="feedback_report_no_app">No app available to send the report</string>
+
+    <!-- Library Screen -->
+    <string name="library_title">Library</string>
+    <string name="library_tab_scans">Scans &amp; Captures</string>
+    <string name="library_tab_splats">Trained Splats</string>
+    <string name="library_storage_folder">Storage: %s</string>
+    <string name="library_change_folder">Change Folder</string>
+    <string name="library_reset_folder">Reset to Default</string>
+    <string name="library_no_scans">No scans found yet. Start by capturing an AR scene!</string>
+    <string name="library_no_splats">No trained splats yet. Train one from a scan or external dataset!</string>
+    <string name="library_scan_frames">%d frames</string>
+    <string name="library_scan_points">%d points</string>
+    <string name="library_scan_train">Train Splat</string>
+    <string name="library_scan_rename">Rename</string>
+    <string name="library_scan_delete">Delete</string>
+    <string name="library_scan_share">Share</string>
+    <string name="library_delete_confirm_title">Delete Scan?</string>
+    <string name="library_delete_confirm_msg">Are you sure you want to delete \"%s\"? This cannot be undone.</string>
+    <string name="library_delete_splat_confirm_title">Delete Trained Splat?</string>
+    <string name="library_delete_splat_confirm_msg">Are you sure you want to delete \"%s\" from app data?</string>
+    <string name="library_rename_title">Rename Scan</string>
+    <string name="library_rename_hint">Enter new project name</string>
+    <string name="library_action_cancel">Cancel</string>
+    <string name="library_action_rename">Rename</string>
+    <string name="library_action_delete">Delete</string>
+    <string name="library_splat_export">Export</string>
+    <string name="library_splat_iterations">%d iterations</string>
+    <string name="library_splat_metrics">PSNR: %1$.1fdB • SSIM: %2$.3f</string>
+
+    <!-- Interoperability & Capture Save -->
+    <string name="capture_save_title">Save Capture</string>
+    <string name="capture_name_label">Project Name</string>
+    <string name="capture_save_action">Save Capture</string>
+    <string name="capture_send_to_training">Send to Training</string>
+    <string name="capture_saved_success">Capture saved to %s</string>
+    <string name="training_select_from_captures">Select from Captures</string>
+    <string name="training_choose_capture_title">Choose Capture Project</string>
+    <string name="training_no_captures_available">No captures found. Complete a capture first!</string>
 </resources>

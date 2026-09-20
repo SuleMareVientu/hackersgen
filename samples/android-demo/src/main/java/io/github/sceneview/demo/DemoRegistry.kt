@@ -64,7 +64,6 @@ object DemoCategory {
 val DEMO_CATEGORIES = listOf(
     DemoCategory.AUGMENTED_REALITY,
     DemoCategory.CONTENT,
-    DemoCategory.BASICS_3D,
 )
 
 /**

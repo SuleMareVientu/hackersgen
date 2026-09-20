@@ -6,6 +6,9 @@ import android.graphics.YuvImage
 import android.media.Image
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -40,7 +43,9 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.Surface
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.FiberManualRecord
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Warning
@@ -51,9 +56,19 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material.icons.filled.PlayArrow
+import io.github.sceneview.demo.storage.CaptureProject
+import io.github.sceneview.demo.storage.CaptureStorageManager
+import io.github.sceneview.demo.state.SplatCaptureStateHolder
+import android.widget.Toast
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -322,7 +337,10 @@ private fun getSupportedResolutions(session: com.google.ar.core.Session): Set<Ca
 }
 
 @Composable
-fun ArSplatCaptureDemo(onBack: () -> Unit) {
+fun ArSplatCaptureDemo(
+    onBack: (() -> Unit)? = null,
+    onSendToTraining: ((CaptureProject) -> Unit)? = null
+) {
     val context = LocalContext.current
     val engine = rememberEngine()
     val modelLoader = rememberModelLoader(engine)
@@ -362,141 +380,113 @@ fun ArSplatCaptureDemo(onBack: () -> Unit) {
         }
     }
 
-    var resolutionIndex by remember { mutableFloatStateOf(1f) }
+    var resolutionIndex by SplatCaptureStateHolder::resolutionIndex
     val selectedResolution = when (resolutionIndex.roundToInt()) {
         0 -> CaptureResolution.P480
         1 -> CaptureResolution.P720
         else -> CaptureResolution.P1080
     }
 
-    var isCapturing by remember { mutableStateOf(false) }
+    var isCapturing by SplatCaptureStateHolder::isCapturing
+    var isGenerating by SplatCaptureStateHolder::isGenerating
 
-    DisposableEffect(activity, isCapturing) {
+    val shouldKeepScreenOn = isCapturing || isGenerating
+    DisposableEffect(activity, shouldKeepScreenOn) {
         val window = activity?.window
-        if (isCapturing) {
+        if (shouldKeepScreenOn) {
             window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
         onDispose {
             window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
     }
-    var isMovingTooFast by remember { mutableStateOf(false) }
-    var warmupFrameCount by remember { mutableIntStateOf(0) }
-    var isGenerating by remember { mutableStateOf(false) }
-    var isExporting by remember { mutableStateOf(false) }
-    var isAutoFocus by remember { mutableStateOf(true) }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, shouldKeepScreenOn) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && shouldKeepScreenOn) {
+                activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+    var isMovingTooFast by SplatCaptureStateHolder::isMovingTooFast
+    var motionSensitivity by SplatCaptureStateHolder::motionSensitivity
+    var warmupFrameCount by SplatCaptureStateHolder::warmupFrameCount
+    var isExporting by SplatCaptureStateHolder::isExporting
+    var isAutoFocus by SplatCaptureStateHolder::isAutoFocus
     var showDiscardDialog by remember { mutableStateOf(false) }
     var arSession by remember { mutableStateOf<com.google.ar.core.Session?>(null) }
-    var activeCameraFps by remember { mutableIntStateOf(30) }
+    var activeCameraFps by SplatCaptureStateHolder::activeCameraFps
 
-    val internalFrameCount = remember { java.util.concurrent.atomic.AtomicInteger(0) }
-    var displayFrameCount by remember { mutableIntStateOf(0) }
-    var displayPointCount by remember { mutableIntStateOf(0) }
-    var pendingFrames by remember { mutableIntStateOf(0) }
-    var processedFrames by remember { mutableIntStateOf(0) }
-    var totalFramesToProcess by remember { mutableIntStateOf(0) }
-    var gpuStatus by remember { mutableIntStateOf(0) }
-    var processingPhase by remember { mutableIntStateOf(0) }
-    var isExportReady by remember { mutableStateOf(false) }
-    val captureContext = remember { CaptureContext() }
+    val internalFrameCount = SplatCaptureStateHolder.internalFrameCount
+    var displayFrameCount by SplatCaptureStateHolder::displayFrameCount
+    var displayPointCount by SplatCaptureStateHolder::displayPointCount
+    var pendingFrames by SplatCaptureStateHolder::pendingFrames
+    var processedFrames by SplatCaptureStateHolder::processedFrames
+    var totalFramesToProcess by SplatCaptureStateHolder::totalFramesToProcess
+    var gpuStatus by SplatCaptureStateHolder::gpuStatus
+    var processingPhase by SplatCaptureStateHolder::processingPhase
+    var isExportReady by SplatCaptureStateHolder::isExportReady
+    var projectNameInput by SplatCaptureStateHolder::projectNameInput
+    var savedProject by SplatCaptureStateHolder::savedProject
+    var isSavingCapture by SplatCaptureStateHolder::isSavingCapture
+    val captureContext = SplatCaptureStateHolder.captureContext
 
     // Request Notification permission for Android 13+
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) {}
 
-    val tempDir = remember {
-        File(context.cacheDir, "splat_capture").apply {
-            deleteRecursively()
-            mkdirs()
-            File(this, "images").mkdirs()
-        }
-    }
+    val tempDir = SplatCaptureStateHolder.getTempDir(context)
 
-    var pipelineHandle by remember { mutableStateOf(0L) }
-    var initError by remember { mutableStateOf<String?>(null) }
+    var pipelineHandle by SplatCaptureStateHolder::pipelineHandle
+    var initError by SplatCaptureStateHolder::initError
     val controlsExpanded = rememberSaveable { mutableStateOf(false) }
 
     fun resetCaptureState() {
-        if (pipelineHandle != 0L) {
-            SplatCapturePipeline.clearPipeline(pipelineHandle)
-        }
-        try {
-            context.stopService(android.content.Intent(context, io.github.sceneview.demo.service.SplatProcessService::class.java))
-        } catch (_: Exception) {}
-        internalFrameCount.set(0)
-        displayFrameCount = 0
-        displayPointCount = 0
-        processingPhase = 0
-        pendingFrames = 0
-        processedFrames = 0
-        warmupFrameCount = 0
-        isMovingTooFast = false
-        captureContext.reset()
-        tempDir.deleteRecursively()
-        tempDir.mkdirs()
-        File(tempDir, "images").mkdirs()
-        val zipFile = File(context.cacheDir, "export.zip")
-        if (zipFile.exists()) {
-            zipFile.delete()
-        }
-        isGenerating = false
-        isExportReady = false
-        isCapturing = false
-        System.gc()
+        SplatCaptureStateHolder.resetCaptureState(context)
     }
 
     LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-            try {
-                // Copy xfeat_fp16.tflite from assets to cache
-                val modelFile = File(context.cacheDir, "xfeat_fp16.tflite")
-                if (!modelFile.exists()) {
-                    context.assets.open("xfeat_fp16.tflite").use { input ->
-                        FileOutputStream(modelFile).use { output ->
-                            input.copyTo(output)
+        SplatCaptureStateHolder.initReceiver(context)
+        if (pipelineHandle == 0L) {
+            withContext(Dispatchers.IO) {
+                try {
+                    // Copy xfeat_fp16.tflite from assets to cache
+                    val modelFile = File(context.cacheDir, "xfeat_fp16.tflite")
+                    if (!modelFile.exists()) {
+                        context.assets.open("xfeat_fp16.tflite").use { input ->
+                            FileOutputStream(modelFile).use { output ->
+                                input.copyTo(output)
+                            }
                         }
                     }
-                }
-                
-                val handle = SplatCapturePipeline.initPipeline(modelFile.absolutePath)
-                if (handle == 0L) {
-                    throw RuntimeException("JNI pipeline handle initialization failed.")
-                }
-                withContext(Dispatchers.Main) {
-                    pipelineHandle = handle
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    initError = "Error initializing JNI: ${e.message}"
+                    
+                    val handle = SplatCapturePipeline.initPipeline(modelFile.absolutePath)
+                    if (handle == 0L) {
+                        throw RuntimeException("JNI pipeline handle initialization failed.")
+                    }
+                    withContext(Dispatchers.Main) {
+                        pipelineHandle = handle
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        initError = "Error initializing JNI: ${e.message}"
+                    }
                 }
             }
         }
     }
 
     DisposableEffect(Unit) {
-        val receiver = object : android.content.BroadcastReceiver() {
-            override fun onReceive(context: android.content.Context, intent: android.content.Intent) {
-                if (intent.action == "io.github.sceneview.demo.SPLAT_PROCESSING_COMPLETE") {
-                    isGenerating = false
-                    isExportReady = true
-                }
-            }
-        }
-        val filter = android.content.IntentFilter("io.github.sceneview.demo.SPLAT_PROCESSING_COMPLETE")
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            context.registerReceiver(receiver, filter)
-        }
-        
         onDispose {
-            context.unregisterReceiver(receiver)
-            resetCaptureState()
-            if (pipelineHandle != 0L) {
-                SplatCapturePipeline.freePipeline(pipelineHandle)
-                pipelineHandle = 0L
-            }
+            // When navigating away to another tab, pause live frame recording if active,
+            // but preserve all captured frames, anchors, JNI pipeline, and files.
+            isCapturing = false
         }
     }
 
@@ -526,10 +516,11 @@ fun ArSplatCaptureDemo(onBack: () -> Unit) {
         }
     }
 
-    LaunchedEffect(isGenerating, arSession) {
+    LaunchedEffect(isGenerating) {
         try {
             if (isGenerating) {
                 arSession?.pause()
+                arSession = null
             } else {
                 arSession?.resume()
             }
@@ -568,6 +559,27 @@ fun ArSplatCaptureDemo(onBack: () -> Unit) {
         }
     }
 
+    LaunchedEffect(isExportReady) {
+        if (isExportReady && savedProject == null && tempDir.exists()) {
+            isSavingCapture = true
+            try {
+                val pointCount = SplatCapturePipeline.getPointCount(pipelineHandle)
+                val project = CaptureStorageManager.saveCaptureZip(
+                    context = context,
+                    projectName = projectNameInput,
+                    sourceDir = tempDir,
+                    frameCount = displayFrameCount,
+                    pointCount = pointCount
+                )
+                savedProject = project
+            } catch (e: Exception) {
+                android.util.Log.e("ARSplatCaptureDemo", "Auto-save capture failed: ${e.message}")
+            } finally {
+                isSavingCapture = false
+            }
+        }
+    }
+
     var lastW by remember { mutableIntStateOf(0) }
     var lastH by remember { mutableIntStateOf(0) }
 
@@ -590,7 +602,6 @@ fun ArSplatCaptureDemo(onBack: () -> Unit) {
         title = stringResource(R.string.demo_ar_splat_capture_title),
         onBack = onBack,
         controlsExpanded = controlsExpanded,
-        onReset = { resetCaptureState() },
         controls = {
             Text(
                 text = "Capture a dataset for Gaussian Splatting. Move the camera slowly around an object. " +
@@ -693,8 +704,69 @@ fun ArSplatCaptureDemo(onBack: () -> Unit) {
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
+            Column(modifier = Modifier.fillMaxWidth()) {
+                val sensitivityLabel = when {
+                    motionSensitivity < 0.85f -> "Relaxed"
+                    motionSensitivity > 1.2f -> "Strict"
+                    else -> "Normal"
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Motion Warning Sensitivity", style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        text = "$sensitivityLabel (${(16f / motionSensitivity).roundToInt()}°/s)",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                Slider(
+                    value = motionSensitivity,
+                    onValueChange = { motionSensitivity = it },
+                    valueRange = 0.6f..1.6f,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isGenerating
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Relaxed",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (motionSensitivity < 0.85f) MaterialTheme.colorScheme.primary else Color.Gray,
+                        fontWeight = if (motionSensitivity < 0.85f) FontWeight.Bold else FontWeight.Normal,
+                        modifier = Modifier.clickable(enabled = !isGenerating) { motionSensitivity = 0.65f }
+                    )
+                    Text(
+                        text = "Normal (Default)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (motionSensitivity in 0.85f..1.2f) MaterialTheme.colorScheme.primary else Color.Gray,
+                        fontWeight = if (motionSensitivity in 0.85f..1.2f) FontWeight.Bold else FontWeight.Normal,
+                        modifier = Modifier.clickable(enabled = !isGenerating) { motionSensitivity = 1.0f }
+                    )
+                    Text(
+                        text = "Strict",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (motionSensitivity > 1.2f) MaterialTheme.colorScheme.primary else Color.Gray,
+                        fontWeight = if (motionSensitivity > 1.2f) FontWeight.Bold else FontWeight.Normal,
+                        modifier = Modifier.clickable(enabled = !isGenerating) { motionSensitivity = 1.35f }
+                    )
+                }
+                Text(
+                    text = "Controls the threshold for the 'Moving Too Fast' warning and discarding blurred frames.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -716,6 +788,92 @@ fun ArSplatCaptureDemo(onBack: () -> Unit) {
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
+            }
+
+            if (isExportReady) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.capture_save_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = projectNameInput,
+                                onValueChange = { projectNameInput = it },
+                                label = { Text(stringResource(R.string.capture_name_label)) },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f),
+                                enabled = !isSavingCapture
+                            )
+                            IconButton(
+                                onClick = {
+                                    val project = savedProject
+                                    if (project != null && projectNameInput.isNotBlank()) {
+                                        coroutineScope.launch {
+                                            val updated = CaptureStorageManager.renameCapture(
+                                                context,
+                                                project,
+                                                projectNameInput.trim()
+                                            )
+                                            if (updated != null) {
+                                                savedProject = updated
+                                                Toast.makeText(context, "Renamed to ${updated.name}", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
+                                },
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Save,
+                                    contentDescription = "Rename capture",
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    text = "Capture saved to Library (${CaptureStorageManager.getCaptureFolderDisplay(context)}). You can share and export it anytime from the Library tab.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
             Row(
@@ -772,45 +930,39 @@ fun ArSplatCaptureDemo(onBack: () -> Unit) {
                         }
                     }
 
-                    // Right button: Generate OR Export
+                    // Right button: Generate OR Train
                     if (isExportReady) {
-                        // Export Button
+                        // Train Button
                         Button(
                             onClick = {
-                                if (isExporting || pipelineHandle == 0L) return@Button
-                                isExporting = true
-                                coroutineScope.launch(Dispatchers.IO) {
-                                    try {
-                                        val zipFile = File(context.cacheDir, "export.zip")
-                                        if (zipFile.exists()) {
-                                            zipFile.delete()
+                                if (pipelineHandle == 0L) return@Button
+                                val project = savedProject
+                                if (project != null) {
+                                    onSendToTraining?.invoke(project)
+                                } else {
+                                    coroutineScope.launch {
+                                        try {
+                                            val p = CaptureStorageManager.saveCaptureZip(
+                                                context = context,
+                                                projectName = projectNameInput,
+                                                sourceDir = tempDir,
+                                                frameCount = displayFrameCount,
+                                                pointCount = displayPointCount
+                                            )
+                                            savedProject = p
+                                            onSendToTraining?.invoke(p)
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Save failed: ${e.message}", Toast.LENGTH_LONG).show()
                                         }
-                                        zip(tempDir, zipFile)
-                                        withContext(Dispatchers.Main) {
-                                            zipLauncher.launch("splat_dataset.zip")
-                                        }
-                                    } catch (e: Exception) {
-                                    } finally {
-                                        withContext(Dispatchers.Main) { isExporting = false }
                                     }
                                 }
                             },
-                            enabled = !isExporting,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                         ) {
-                            if (isExporting) {
-                                androidx.compose.material3.CircularProgressIndicator(
-                                    modifier = Modifier.size(20.dp),
-                                    color = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary,
-                                    strokeWidth = 2.dp
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Exporting...")
-                            } else {
-                                Icon(Icons.Default.Save, contentDescription = null)
-                                Spacer(Modifier.width(8.dp))
-                                Text(stringResource(R.string.ar_splat_capture_export))
-                            }
+                            Icon(Icons.Default.PlayArrow, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Train")
                         }
                     } else {
                         // Generate Button
@@ -944,66 +1096,83 @@ fun ArSplatCaptureDemo(onBack: () -> Unit) {
 
             Layout(
                 content = {
-                    key(selectedResolution) {
-                        val cameraStream = rememberARCameraStream(materialLoader)
-                        ARSceneView(
-                            modifier = Modifier.aspectRatio(previewAspectRatio, matchHeightConstraintsFirst = matchHeight),
-                            engine = engine,
-                            modelLoader = modelLoader,
-                            materialLoader = materialLoader,
-                            cameraStream = cameraStream,
-                            planeRenderer = false,
-                            sessionCameraConfig = { session ->
-                                val detected = getSupportedResolutions(session)
-                                supportedResolutions = detected
-                                val targetConfig = selectCameraConfig(session, selectedResolution)
-                                activeCameraFps = targetConfig.fpsRange.upper
-                                targetConfig
-                            },
-                onSessionFailure = { failure ->
-                    when (failure) {
-                        is ARSessionFailure.DeviceNotCompatible -> {
-                            arErrorMessage = Pair(
-                                "AR Not Supported",
-                                "This device does not meet the hardware requirements for ARCore motion tracking. Splat capture cannot run on this device."
-                            )
-                        }
-                        is ARSessionFailure.ArCoreNotInstalled -> {
-                            arErrorMessage = Pair(
-                                "ARCore Not Installed",
-                                "Google Play Services for AR is required for motion tracking. Please install it from Google Play Store."
-                            )
-                        }
-                        is ARSessionFailure.ApkTooOld -> {
-                            arErrorMessage = Pair(
-                                "ARCore Update Required",
-                                "Google Play Services for AR is outdated. Please update it from Google Play Store."
-                            )
-                        }
-                        is ARSessionFailure.CameraNotAvailable -> {
-                            arErrorMessage = Pair(
-                                "Camera Unavailable",
-                                "Camera access was denied or the camera is in use by another application. Please check app permissions."
-                            )
-                        }
-                        else -> {
-                            arErrorMessage = Pair(
-                                "AR Session Error",
-                                failure.cause.localizedMessage ?: "Failed to initialize ARCore session."
-                            )
-                        }
-                    }
-                },
-                sessionConfiguration = { session, config ->
-                    config.focusMode = if (isAutoFocus) Config.FocusMode.AUTO else Config.FocusMode.FIXED
-                    config.depthMode = Config.DepthMode.DISABLED
-                    config.planeFindingMode = Config.PlaneFindingMode.DISABLED
-                },
-                    onSessionUpdated = { session, frame ->
-                        if (arSession != session) {
-                            arSession = session
-                            activeCameraFps = session.cameraConfig.fpsRange.upper
-                        }
+                    if (!isGenerating) {
+                        key(selectedResolution) {
+                            val cameraStream = rememberARCameraStream(materialLoader)
+                            ARSceneView(
+                                modifier = Modifier.aspectRatio(previewAspectRatio, matchHeightConstraintsFirst = matchHeight),
+                                engine = engine,
+                                modelLoader = modelLoader,
+                                materialLoader = materialLoader,
+                                cameraStream = cameraStream,
+                                planeRenderer = false,
+                                sessionCameraConfig = { session ->
+                                    val detected = getSupportedResolutions(session)
+                                    supportedResolutions = detected
+                                    val targetConfig = selectCameraConfig(session, selectedResolution)
+                                    activeCameraFps = targetConfig.fpsRange.upper
+                                    targetConfig
+                                },
+                                onSessionCreated = { session ->
+                                    if (isGenerating) {
+                                        try { session.pause() } catch (_: Exception) {}
+                                    } else {
+                                        arSession = session
+                                    }
+                                },
+                                onSessionResumed = { session ->
+                                    if (isGenerating) {
+                                        try { session.pause() } catch (_: Exception) {}
+                                    }
+                                },
+                                onSessionFailure = { failure ->
+                                    when (failure) {
+                                        is ARSessionFailure.DeviceNotCompatible -> {
+                                            arErrorMessage = Pair(
+                                                "AR Not Supported",
+                                                "This device does not meet the hardware requirements for ARCore motion tracking. Splat capture cannot run on this device."
+                                            )
+                                        }
+                                        is ARSessionFailure.ArCoreNotInstalled -> {
+                                            arErrorMessage = Pair(
+                                                "ARCore Not Installed",
+                                                "Google Play Services for AR is required for motion tracking. Please install it from Google Play Store."
+                                            )
+                                        }
+                                        is ARSessionFailure.ApkTooOld -> {
+                                            arErrorMessage = Pair(
+                                                "ARCore Update Required",
+                                                "Google Play Services for AR is outdated. Please update it from Google Play Store."
+                                            )
+                                        }
+                                        is ARSessionFailure.CameraNotAvailable -> {
+                                            arErrorMessage = Pair(
+                                                "Camera Unavailable",
+                                                "Camera access was denied or the camera is in use by another application. Please check app permissions."
+                                            )
+                                        }
+                                        else -> {
+                                            arErrorMessage = Pair(
+                                                "AR Session Error",
+                                                failure.cause.localizedMessage ?: "Failed to initialize ARCore session."
+                                            )
+                                        }
+                                    }
+                                },
+                                sessionConfiguration = { session, config ->
+                                    config.focusMode = if (isAutoFocus) Config.FocusMode.AUTO else Config.FocusMode.FIXED
+                                    config.depthMode = Config.DepthMode.DISABLED
+                                    config.planeFindingMode = Config.PlaneFindingMode.DISABLED
+                                },
+                                onSessionUpdated = { session, frame ->
+                                    if (isGenerating) {
+                                        try { session.pause() } catch (_: Exception) {}
+                                        return@ARSceneView
+                                    }
+                                    if (arSession != session) {
+                                        arSession = session
+                                        activeCameraFps = session.cameraConfig.fpsRange.upper
+                                    }
                         
                         if (isCapturing && frame.camera.trackingState == TrackingState.TRACKING && pipelineHandle != 0L) {
                             if (warmupFrameCount < 60) {
@@ -1030,8 +1199,12 @@ fun ArSplatCaptureDemo(onBack: () -> Unit) {
                             captureContext.prevFramePose = currentPose
                             captureContext.prevFrameTimestampNs = currentTimestampNs
 
-                            // Fast motion detection: angular velocity > 12 deg/s or linear velocity > 0.25 m/s (~1/3 off original 20 deg/s / 0.40 m/s)
-                            val isTooFast = captureContext.smoothedAngularVelocity > 12.0f || captureContext.smoothedLinearVelocity > 0.25f
+                            // Fast motion detection based on sensitivity slider (default 1.0f gives 16°/s and 0.32 m/s, slightly relaxed from previous 12°/s)
+                            val maxAngularVelocity = 16.0f / motionSensitivity
+                            val maxLinearVelocity = 0.32f / motionSensitivity
+                            val rollingShutterAngularThreshold = maxAngularVelocity * 0.85f
+
+                            val isTooFast = captureContext.smoothedAngularVelocity > maxAngularVelocity || captureContext.smoothedLinearVelocity > maxLinearVelocity
                             val wasTooFast = isMovingTooFast
                             if (isMovingTooFast != isTooFast) {
                                 isMovingTooFast = isTooFast
@@ -1052,7 +1225,7 @@ fun ArSplatCaptureDemo(onBack: () -> Unit) {
                             val shouldCapture = (hasDisplacement && hasTimeElapsed) || isRecovery
 
                             if (shouldCapture) {
-                                val isRollingShutterRisk = if (isTooFast || captureContext.smoothedAngularVelocity > 10.0f) 1 else 0
+                                val isRollingShutterRisk = if (isTooFast || captureContext.smoothedAngularVelocity > rollingShutterAngularThreshold) 1 else 0
                                 captureContext.lastPose = currentPose
                                 captureContext.lastTimestampNs = currentTimestampNs
 
@@ -1183,7 +1356,8 @@ fun ArSplatCaptureDemo(onBack: () -> Unit) {
                     }
                 )
             }
-        },
+        }
+    },
             modifier = Modifier.fillMaxSize()
         ) { measurables, constraints ->
             val placeable = measurables.firstOrNull()?.measure(constraints)
@@ -1208,10 +1382,60 @@ fun ArSplatCaptureDemo(onBack: () -> Unit) {
             }
         }
 
+            if (isGenerating) {
+                val phaseText = when (processingPhase) {
+                    0 -> "Starting..."
+                    1 -> "Extracting Features..."
+                    2 -> "Culling Matches..."
+                    3 -> "Matching & Triangulating..."
+                    4 -> "Bundle Adjustment..."
+                    5 -> "Dense Optical Flow..."
+                    6 -> "Consistency & Thinning..."
+                    7 -> "Exporting..."
+                    8 -> "Complete"
+                    else -> "Processing..."
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.padding(32.dp)
+                    ) {
+                        androidx.compose.material3.CircularProgressIndicator(
+                            modifier = Modifier.size(56.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            strokeWidth = 4.dp
+                        )
+                        Text(
+                            text = "Generating Point Cloud",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Text(
+                            text = phaseText,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        if (totalFramesToProcess > 0) {
+                            Text(
+                                text = "Processing $processedFrames / $totalFramesToProcess frames",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.LightGray
+                            )
+                        }
+                    }
+                }
+            }
+
             Card(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .windowInsetsPadding(WindowInsets.systemBars)
                     .padding(top = 16.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)),
                 shape = RoundedCornerShape(24.dp)
@@ -1246,12 +1470,45 @@ fun ArSplatCaptureDemo(onBack: () -> Unit) {
             }
 
             AnimatedVisibility(
+                visible = isExportReady,
+                enter = fadeIn() + slideInVertically(initialOffsetY = { -it }),
+                exit = fadeOut() + slideOutVertically(targetOffsetY = { -it }),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 76.dp)
+            ) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.92f),
+                    shape = RoundedCornerShape(20.dp),
+                    shadowElevation = 6.dp
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = "Saved to Library • Tap Train to start training",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+            }
+
+            AnimatedVisibility(
                 visible = isCapturing && isMovingTooFast,
                 enter = fadeIn() + slideInVertically(initialOffsetY = { -it }),
                 exit = fadeOut() + slideOutVertically(targetOffsetY = { -it }),
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .windowInsetsPadding(WindowInsets.systemBars)
                     .padding(top = 76.dp)
             ) {
                 Surface(
@@ -1289,7 +1546,6 @@ fun ArSplatCaptureDemo(onBack: () -> Unit) {
                     },
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .windowInsetsPadding(WindowInsets.systemBars)
                         .padding(bottom = 32.dp),
                     containerColor = MaterialTheme.colorScheme.error,
                     contentColor = MaterialTheme.colorScheme.onError,
@@ -1341,7 +1597,7 @@ fun ArSplatCaptureDemo(onBack: () -> Unit) {
                 Button(
                     onClick = {
                         arErrorMessage = null
-                        onBack()
+                        onBack?.invoke()
                     }
                 ) {
                     Text("Go Back")

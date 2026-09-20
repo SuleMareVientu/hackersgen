@@ -49,7 +49,7 @@ internal const val ISSUE_LOGCAT_MAX_LINES = 60
 internal const val ISSUE_URL_MAX_LENGTH = 7000
 
 /** Where new bug-report issues are opened. */
-internal const val GITHUB_NEW_ISSUE_URL = "https://github.com/sceneview/sceneview/issues/new"
+internal const val GITHUB_NEW_ISSUE_URL = "https://github.com/SuleMareVientu/opensplat-android/issues/new"
 
 /**
  * Snapshot of device / app context attached to a bug report — what a
@@ -114,7 +114,7 @@ fun formatReportTitle(info: BugReportInfo, note: String): String {
  * included, rides along as an `EXTRA_STREAM` attachment).
  */
 fun formatShareText(info: BugReportInfo, note: String): String = buildString {
-    appendLine("SceneView demo — bug report")
+    appendLine("OpenSplat — bug report")
     appendLine()
     val text = note.trim()
     if (text.isNotEmpty()) {

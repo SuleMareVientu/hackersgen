@@ -146,7 +146,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun DemoScaffold(
     title: String,
-    onBack: () -> Unit,
+    onBack: (() -> Unit)? = null,
     controls: (@Composable ColumnScope.() -> Unit)? = null,
     controlsExpanded: androidx.compose.runtime.MutableState<Boolean>? = null,
     firstFrameRendered: androidx.compose.runtime.State<Boolean>? = null,
@@ -160,6 +160,7 @@ fun DemoScaffold(
     val resetScope = rememberCoroutineScope()
     val resetConfirmation = stringResource(R.string.demo_reset_done)
     Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
@@ -194,11 +195,13 @@ fun DemoScaffold(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.cd_back_button)
-                        )
+                    if (onBack != null) {
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = stringResource(R.string.cd_back_button)
+                            )
+                        }
                     }
                 },
                 actions = {

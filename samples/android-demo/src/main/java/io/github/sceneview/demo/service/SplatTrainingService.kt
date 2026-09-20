@@ -58,7 +58,7 @@ class SplatTrainingService : Service() {
     }
 
     private var thermalListener: PowerManager.OnThermalStatusChangedListener? = null
-    private var totalIterations: Int = 10000
+    private var totalIterations: Int = 1000
     private var datasetName: String = "Dataset"
 
     override fun onCreate() {
@@ -95,7 +95,7 @@ class SplatTrainingService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START_TRAINING -> {
-                totalIterations = intent.getIntExtra("total", 10000)
+                totalIterations = intent.getIntExtra("total", 1000)
                 datasetName = intent.getStringExtra("dataset_name") ?: "Dataset"
 
                 val notification = NotificationCompat.Builder(this, CHANNEL_ID)

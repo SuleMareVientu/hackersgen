@@ -3,6 +3,7 @@
 package io.github.sceneview.demo.demos
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -12,12 +13,19 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.SaveAlt
+import androidx.compose.material.icons.filled.Share
+import androidx.core.content.FileProvider
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -65,10 +73,25 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.TextButton
+import io.github.sceneview.demo.storage.CaptureProject
+import io.github.sceneview.demo.storage.CaptureStorageManager
+import io.github.sceneview.demo.storage.TrainedSplat
+import io.github.sceneview.demo.storage.TrainedSplatStorage
+import io.github.sceneview.demo.state.SplatTrainingStateHolder
 import java.io.File
 
 @Composable
-fun SplatTrainingDemo(onBack: () -> Unit) {
+fun SplatTrainingDemo(
+    onBack: (() -> Unit)? = null,
+    initialProject: CaptureProject? = null,
+    onNavigateToLibrary: (() -> Unit)? = null
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -77,33 +100,50 @@ fun SplatTrainingDemo(onBack: () -> Unit) {
         ActivityResultContracts.RequestPermission()
     ) {}
 
-    // Dataset selection states
-    var datasetUri by remember { mutableStateOf<Uri?>(null) }
-    var datasetName by remember { mutableStateOf<String?>(null) }
+    // Dataset selection states delegated to retained SplatTrainingStateHolder
+    var datasetUri by SplatTrainingStateHolder::datasetUri
+    var datasetName by SplatTrainingStateHolder::datasetName
+    var iterationsInput by SplatTrainingStateHolder::iterationsInput
 
-    // Synced slider/textfield iterations
-    var iterationsInput by remember { mutableStateOf("10000") }
+    // Training state and metrics delegated to retained SplatTrainingStateHolder
+    var isTraining by SplatTrainingStateHolder::isTraining
+    var currentIteration by SplatTrainingStateHolder::currentIteration
+    var totalIterations by SplatTrainingStateHolder::totalIterations
+    var trainingElapsedMs by SplatTrainingStateHolder::trainingElapsedMs
+    var estimatedRemainingMs by SplatTrainingStateHolder::estimatedRemainingMs
+    var statusText by SplatTrainingStateHolder::statusText
+    var trainingCompleted by SplatTrainingStateHolder::trainingCompleted
 
-    // Training state and metrics
-    var isTraining by remember { mutableStateOf(false) }
-    var currentIteration by remember { mutableIntStateOf(0) }
-    var totalIterations by remember { mutableIntStateOf(10000) }
-    var trainingElapsedMs by remember { mutableLongStateOf(0L) }
-    var evalPsnr by remember { mutableFloatStateOf(0f) }
-    var evalSsim by remember { mutableFloatStateOf(0f) }
-    var statusText by remember { mutableStateOf("Ready to train") }
-    var trainingCompleted by remember { mutableStateOf(false) }
+    var activeSplatId by SplatTrainingStateHolder::activeSplatId
+    var currentExportName by SplatTrainingStateHolder::currentExportName
 
-    // Persistent trained splats and active state tracking
-    var trainedSplats by remember { mutableStateOf(loadTrainedSplats(context)) }
-    var activeSplatId by remember { mutableStateOf<String?>(null) }
-    var currentExportName by remember { mutableStateOf("") }
+    var showCapturesDialog by remember { mutableStateOf(false) }
 
-    // Clean up temporary ZIP files on entry/relaunch
     LaunchedEffect(Unit) {
-        val cacheFile = File(context.cacheDir, "training_dataset.zip")
-        if (cacheFile.exists()) {
-            cacheFile.delete()
+        SplatTrainingStateHolder.initListener(context)
+    }
+
+    LaunchedEffect(initialProject) {
+        if (initialProject != null) {
+            datasetUri = Uri.parse(initialProject.uriString)
+            datasetName = "${initialProject.name}.zip"
+        }
+    }
+
+    // Persistent trained splats
+    var trainedSplats by remember { mutableStateOf(TrainedSplatStorage.loadTrainedSplats(context)) }
+
+    LaunchedEffect(isTraining, trainingCompleted) {
+        trainedSplats = TrainedSplatStorage.loadTrainedSplats(context)
+    }
+
+    // Clean up temporary ZIP files on entry/relaunch ONLY IF NOT ACTIVELY TRAINING
+    LaunchedEffect(Unit) {
+        if (!isTraining) {
+            val cacheFile = File(context.cacheDir, "training_dataset.zip")
+            if (cacheFile.exists()) {
+                cacheFile.delete()
+            }
         }
     }
 
@@ -115,7 +155,7 @@ fun SplatTrainingDemo(onBack: () -> Unit) {
         val splat = splatToSave
         if (uri != null && splat != null) {
             scope.launch(Dispatchers.IO) {
-                val sourceFile = getSplatFile(context, splat.exportName)
+                val sourceFile = TrainedSplatStorage.getSplatFile(context, splat.exportName)
                 if (sourceFile.exists()) {
                     try {
                         context.contentResolver.openOutputStream(uri)?.use { outStream ->
@@ -151,78 +191,19 @@ fun SplatTrainingDemo(onBack: () -> Unit) {
         }
     }
 
-    // Set up progress listener cleanly
-    DisposableEffect(scope) {
-        var lastNotificationUpdateMs = 0L
-
-        BrushEngine.setProgressListener(object : BrushProgressListener {
-            override fun onProgress(iter: Int, total: Int, elapsedMs: Long) {
-                scope.launch(Dispatchers.Main) {
-                    currentIteration = iter
-                    totalIterations = total
-                    trainingElapsedMs = elapsedMs
-                    statusText = "Training…"
-                }
-                val now = System.currentTimeMillis()
-                if (now - lastNotificationUpdateMs >= 500L || iter >= total) {
-                    lastNotificationUpdateMs = now
-                    SplatTrainingService.updateProgress(
-                        context = context,
-                        iteration = iter,
-                        total = total,
-                        elapsedMs = elapsedMs,
-                        datasetName = datasetName
-                    )
-                }
-            }
-
-            override fun onEvalResult(iter: Int, psnr: Float, ssim: Float) {
-                scope.launch(Dispatchers.Main) {
-                    evalPsnr = psnr
-                    evalSsim = ssim
-                }
-            }
-
-            override fun onTrainingComplete() {
-                SplatTrainingService.stop(context)
-                scope.launch(Dispatchers.Main) {
-                    statusText = "Finished!"
-                    isTraining = false
-                    trainingCompleted = true
-                    val newSplat = TrainedSplat(
-                        id = activeSplatId ?: System.currentTimeMillis().toString(),
-                        datasetName = datasetName ?: "Unknown Dataset",
-                        iterations = totalIterations,
-                        elapsedMs = trainingElapsedMs,
-                        psnr = evalPsnr,
-                        ssim = evalSsim,
-                        status = "Finished!",
-                        exportName = currentExportName,
-                        timestamp = System.currentTimeMillis(),
-                        currentIteration = totalIterations
-                    )
-                    trainedSplats = listOf(newSplat) + trainedSplats
-                    saveTrainedSplats(context, trainedSplats)
-                    activeSplatId = null
-                }
-            }
-        })
-        onDispose {
-            BrushEngine.setProgressListener(null)
-            SplatTrainingService.stop(context)
-        }
-    }
-
     Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.demo_splat_training)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
-                        )
+                    if (onBack != null) {
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back"
+                            )
+                        }
                     }
                 }
             )
@@ -248,14 +229,28 @@ fun SplatTrainingDemo(onBack: () -> Unit) {
                     Text(
                         text = datasetName ?: stringResource(R.string.demo_splat_training_placeholder),
                         style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = if (datasetName != null) FontWeight.Bold else FontWeight.Normal,
                         textAlign = TextAlign.Center
                     )
                     Spacer(modifier = Modifier.height(12.dp))
-                    Button(
-                        onClick = { filePickerLauncher.launch("application/zip") },
-                        enabled = !isTraining
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(text = stringResource(R.string.demo_splat_training_select_file))
+                        Button(
+                            onClick = { showCapturesDialog = true },
+                            enabled = !isTraining,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(text = stringResource(R.string.training_select_from_captures), textAlign = TextAlign.Center)
+                        }
+                        OutlinedButton(
+                            onClick = { filePickerLauncher.launch("application/zip") },
+                            enabled = !isTraining,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(text = stringResource(R.string.demo_splat_training_select_file), textAlign = TextAlign.Center)
+                        }
                     }
                 }
             }
@@ -278,7 +273,13 @@ fun SplatTrainingDemo(onBack: () -> Unit) {
                 OutlinedTextField(
                     value = iterationsInput,
                     onValueChange = { newVal ->
-                        iterationsInput = newVal
+                        val digits = newVal.filter { it.isDigit() }
+                        iterationsInput = if (digits.isEmpty()) {
+                            ""
+                        } else {
+                            val intVal = digits.toIntOrNull() ?: 10000
+                            if (intVal > 10000) "10000" else digits
+                        }
                     },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.width(100.dp),
@@ -287,11 +288,11 @@ fun SplatTrainingDemo(onBack: () -> Unit) {
                 )
                 Spacer(modifier = Modifier.width(16.dp))
                 Slider(
-                    value = (iterationsInput.toIntOrNull() ?: 10000).toFloat(),
+                    value = (iterationsInput.toIntOrNull() ?: 1000).toFloat().coerceIn(100f, 10000f),
                     onValueChange = {
                         iterationsInput = it.toInt().toString()
                     },
-                    valueRange = 1000f..30000f,
+                    valueRange = 100f..10000f,
                     modifier = Modifier.weight(1f),
                     enabled = !isTraining
                 )
@@ -302,21 +303,6 @@ fun SplatTrainingDemo(onBack: () -> Unit) {
             Button(
                 onClick = {
                     if (datasetUri != null && !isTraining) {
-                        val iters = iterationsInput.toIntOrNull()?.coerceIn(100, 100000) ?: 10000
-                        currentIteration = 0
-                        totalIterations = iters
-                        evalPsnr = 0f
-                        evalSsim = 0f
-                        isTraining = true
-                        trainingCompleted = false
-                        statusText = "Initializing training…"
-
-                        val timestamp = System.currentTimeMillis()
-                        val sanitizedDataset = datasetName?.substringBeforeLast('.')?.replace(Regex("[^a-zA-Z0-9_]"), "_") ?: "model"
-                        val uniqueExportName = "splat_${sanitizedDataset}_${timestamp}.ply"
-                        currentExportName = uniqueExportName
-                        activeSplatId = timestamp.toString()
-
                         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
                             if (androidx.core.content.ContextCompat.checkSelfPermission(
                                     context,
@@ -326,43 +312,24 @@ fun SplatTrainingDemo(onBack: () -> Unit) {
                                 notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
                             }
                         }
-                        SplatTrainingService.start(context, iters, sanitizedDataset)
-
-                        val config = BrushConfig().apply {
-                            totalTrainIters = iters
-                            exportName = uniqueExportName
-                        }
-
-                        scope.launch(Dispatchers.Default) {
-                            try {
-                                val tempFile = copyUriToCache(context, datasetUri!!)
-                                if (tempFile == null || !tempFile.exists()) {
-                                    SplatTrainingService.stop(context)
-                                    withContext(Dispatchers.Main) {
-                                        statusText = "Error: Failed to prepare dataset file"
-                                        isTraining = false
-                                        activeSplatId = null
-                                    }
-                                    return@launch
-                                }
-                                val tempUri = Uri.fromFile(tempFile)
-                                BrushEngine.start(context, tempUri, config)
-                            } catch (e: Exception) {
-                                SplatTrainingService.stop(context)
-                                withContext(Dispatchers.Main) {
-                                    val errMsg = "Error: ${e.localizedMessage ?: e.message}"
-                                    statusText = errMsg
-                                    isTraining = false
-                                    activeSplatId = null
-                                }
-                            }
-                        }
+                        SplatTrainingStateHolder.startTraining(context)
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = datasetUri != null && !isTraining
             ) {
                 Text(text = stringResource(R.string.demo_splat_training_start))
+            }
+
+            if (isTraining) {
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = { SplatTrainingStateHolder.cancelTraining(context) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Cancel Training")
+                }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -392,7 +359,8 @@ fun SplatTrainingDemo(onBack: () -> Unit) {
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
                                 text = stringResource(
@@ -402,164 +370,67 @@ fun SplatTrainingDemo(onBack: () -> Unit) {
                                 ),
                                 style = MaterialTheme.typography.bodyMedium
                             )
+                            val elapsedFormatted = formatDuration(trainingElapsedMs)
+                            val timingText = if (isTraining && !trainingCompleted && estimatedRemainingMs > 0L) {
+                                "Elapsed: $elapsedFormatted • ETA: ${formatDuration(estimatedRemainingMs)}"
+                            } else {
+                                "Elapsed: $elapsedFormatted"
+                            }
                             Text(
-                                text = "Elapsed: ${trainingElapsedMs / 1000}s",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = stringResource(
-                                    R.string.demo_splat_training_psnr,
-                                    if (evalPsnr > 0) "%.2f".format(evalPsnr) else "—"
-                                ),
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                            Text(
-                                text = stringResource(
-                                    R.string.demo_splat_training_ssim,
-                                    if (evalSsim > 0) "%.3f".format(evalSsim) else "—"
-                                ),
+                                text = timingText,
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         }
 
                         if (trainingCompleted && currentExportName.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Button(
-                                onClick = {
-                                    val currentSplat = trainedSplats.find { it.exportName == currentExportName }
-                                    if (currentSplat != null) {
-                                        splatToSave = currentSplat
-                                        saveLauncher.launch(currentExportName)
-                                    }
-                                },
-                                modifier = Modifier.align(Alignment.End)
-                            ) {
-                                Text("Export")
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (trainedSplats.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(24.dp))
-                Text(
-                    text = "Trained Splats",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.align(Alignment.Start)
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-
-                trainedSplats.forEach { splat ->
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 6.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
+                            Spacer(modifier = Modifier.height(14.dp))
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = splat.exportName,
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = "Dataset: ${splat.datasetName}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                                    )
-                                }
-                                Text(
-                                    text = splat.status,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = when {
-                                        splat.status.startsWith("Finished") -> MaterialTheme.colorScheme.primary
-                                        splat.status.startsWith("Error") -> MaterialTheme.colorScheme.error
-                                        else -> MaterialTheme.colorScheme.secondary
-                                    }
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = "Iters: ${splat.currentIteration}/${splat.iterations}",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                                Text(
-                                    text = "Elapsed: ${splat.elapsedMs / 1000}s",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                            }
-
-                            if (splat.psnr > 0 || splat.ssim > 0) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text(
-                                        text = "PSNR: ${if (splat.psnr > 0) "%.2f".format(splat.psnr) else "—"}",
-                                        style = MaterialTheme.typography.bodyMedium
-                                    )
-                                    Text(
-                                        text = "SSIM: ${if (splat.ssim > 0) "%.3f".format(splat.ssim) else "—"}",
-                                        style = MaterialTheme.typography.bodyMedium
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(12.dp))
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End
-                            ) {
-                                if (splat.status == "Finished!") {
-                                    Button(
-                                        onClick = {
-                                            splatToSave = splat
-                                            saveLauncher.launch(splat.exportName)
-                                        },
-                                        modifier = Modifier.padding(end = 8.dp)
+                                if (onNavigateToLibrary != null) {
+                                    OutlinedButton(
+                                        onClick = onNavigateToLibrary,
+                                        shape = RoundedCornerShape(percent = 50)
                                     ) {
-                                        Text("Export")
+                                        Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("View in Library")
                                     }
+                                } else {
+                                    Spacer(modifier = Modifier.width(1.dp))
                                 }
-                                Button(
-                                    onClick = {
-                                        val file = getSplatFile(context, splat.exportName)
-                                        if (file.exists()) {
-                                            file.delete()
+                                val currentSplat = trainedSplats.find { it.exportName == currentExportName }
+                                if (currentSplat != null) {
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        IconButton(
+                                            onClick = {
+                                                shareTrainedSplat(context, currentSplat)
+                                            }
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Share,
+                                                contentDescription = "Share Splat",
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
                                         }
-                                        trainedSplats = trainedSplats.filter { it.id != splat.id }
-                                        saveTrainedSplats(context, trainedSplats)
-                                    },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                                        contentColor = MaterialTheme.colorScheme.onErrorContainer
-                                    )
-                                ) {
-                                    Text("Delete")
+                                        IconButton(
+                                            onClick = {
+                                                splatToSave = currentSplat
+                                                saveLauncher.launch(currentExportName)
+                                            }
+                                        ) {
+                                            Icon(
+                                                Icons.Default.SaveAlt,
+                                                contentDescription = "Export Splat",
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -567,6 +438,74 @@ fun SplatTrainingDemo(onBack: () -> Unit) {
                 }
             }
         }
+    }
+
+    if (showCapturesDialog) {
+        val availableCaptures = remember(showCapturesDialog) { CaptureStorageManager.getCaptureProjects(context) }
+        AlertDialog(
+            onDismissRequest = { showCapturesDialog = false },
+            title = { Text(stringResource(R.string.training_choose_capture_title)) },
+            text = {
+                if (availableCaptures.isEmpty()) {
+                    Text(stringResource(R.string.training_no_captures_available))
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(availableCaptures, key = { it.id }) { cap ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        datasetUri = Uri.parse(cap.uriString)
+                                        datasetName = "${cap.name}.zip"
+                                        showCapturesDialog = false
+                                    },
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text(cap.name, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                                    Text(
+                                        "${cap.frameCount} frames • ${cap.pointCount} points",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showCapturesDialog = false }) {
+                    Text(stringResource(R.string.library_action_cancel))
+                }
+            }
+        )
+    }
+}
+
+private fun shareTrainedSplat(context: Context, splat: TrainedSplat) {
+    try {
+        val file = TrainedSplatStorage.getSplatFile(context, splat.exportName)
+        if (!file.exists()) {
+            Toast.makeText(context, "Splat file not found: ${splat.exportName}", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "application/octet-stream"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(shareIntent, "Share ${splat.exportName}"))
+    } catch (e: Exception) {
+        Toast.makeText(context, "Failed to share: ${e.message}", Toast.LENGTH_SHORT).show()
     }
 }
 
@@ -595,45 +534,7 @@ private fun getFileName(context: Context, uri: Uri): String? {
     return result
 }
 
-@Serializable
-data class TrainedSplat(
-    val id: String,
-    val datasetName: String,
-    val iterations: Int,
-    val elapsedMs: Long,
-    val psnr: Float,
-    val ssim: Float,
-    val status: String,
-    val exportName: String,
-    val timestamp: Long,
-    val currentIteration: Int = 0
-)
 
-private fun loadTrainedSplats(context: Context): List<TrainedSplat> {
-    val prefs = context.getSharedPreferences("splat_training_prefs", Context.MODE_PRIVATE)
-    val json = prefs.getString("trained_splats", null) ?: return emptyList()
-    return try {
-        Json.decodeFromString<List<TrainedSplat>>(json)
-    } catch (e: Exception) {
-        emptyList()
-    }
-}
-
-private fun saveTrainedSplats(context: Context, splats: List<TrainedSplat>) {
-    val prefs = context.getSharedPreferences("splat_training_prefs", Context.MODE_PRIVATE)
-    val json = Json.encodeToString(splats)
-    prefs.edit().putString("trained_splats", json).apply()
-}
-
-private fun getSplatFile(context: Context, exportName: String): File {
-    val filesDirFile = File(context.filesDir, exportName)
-    if (filesDirFile.exists()) return filesDirFile
-    val cacheDirFile = File(context.cacheDir, exportName)
-    if (cacheDirFile.exists()) return cacheDirFile
-    val externalFile = File(context.getExternalFilesDir(null), exportName)
-    if (externalFile.exists()) return externalFile
-    return filesDirFile
-}
 
 private suspend fun copyUriToCache(context: Context, uri: Uri): File? = withContext(Dispatchers.IO) {
     try {
@@ -733,5 +634,17 @@ private fun UtilizationItem(label: String, value: String, progress: Float, modif
                 trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
             )
         }
+    }
+}
+
+private fun formatDuration(ms: Long): String {
+    val totalSec = (ms / 1000).coerceAtLeast(0)
+    val hours = totalSec / 3600
+    val mins = (totalSec % 3600) / 60
+    val secs = totalSec % 60
+    return when {
+        hours > 0 -> "${hours}h ${mins}m"
+        mins > 0 -> "${mins}m ${secs}s"
+        else -> "${secs}s"
     }
 }

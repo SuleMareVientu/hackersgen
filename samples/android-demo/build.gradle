@@ -201,6 +201,9 @@ dependencies {
 
     // LiteRT dependencies for Async AI Depth
     implementation 'com.google.ai.edge.litert:litert:2.1.6'
+
+    // Storage Access Framework DocumentFile helper
+    implementation 'androidx.documentfile:documentfile:1.0.1'
 }
 
 task downloadXFeatModel {

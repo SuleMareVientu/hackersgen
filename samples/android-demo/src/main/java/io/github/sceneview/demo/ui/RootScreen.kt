@@ -15,11 +15,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -63,22 +65,29 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.annotation.StringRes
+import androidx.compose.material.icons.filled.Brush
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Folder
 import io.github.sceneview.demo.ALL_DEMOS
 import io.github.sceneview.demo.BuildConfig
 import io.github.sceneview.demo.DemoEntry
-import io.github.sceneview.demo.DemoListScreen
 import io.github.sceneview.demo.R
+import io.github.sceneview.demo.demos.ArSplatCaptureDemo
+import io.github.sceneview.demo.demos.SplatTrainingDemo
 import io.github.sceneview.demo.feedback.DriveFeedbackChipReveal
 import io.github.sceneview.demo.feedback.FEEDBACK_FAB_RESERVED_SPACE
+import io.github.sceneview.demo.storage.CaptureProject
 
 /**
- * Top-level UI scaffold hosting the OpenSplat demos and About tab.
+ * Top-level UI scaffold hosting OpenSplat's Capture, Training, Library, and About tabs.
  */
 @Composable
 fun RootScreen(onDemoClick: (String) -> Unit) {
-    var selectedTab by rememberSaveable { mutableStateOf(RootTab.Samples) }
+    var selectedTab by rememberSaveable { mutableStateOf(RootTab.Capture) }
+    var selectedTrainingProject by remember { mutableStateOf<CaptureProject?>(null) }
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
             NavigationBar {
                 RootTab.entries.forEach { tab ->
@@ -95,12 +104,24 @@ fun RootScreen(onDemoClick: (String) -> Unit) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding),
+                .padding(bottom = padding.calculateBottomPadding()),
         ) {
             when (selectedTab) {
-                RootTab.Samples -> DemoListScreen(
-                    onDemoClick = onDemoClick,
-                    onAboutClick = { selectedTab = RootTab.About },
+                RootTab.Capture -> ArSplatCaptureDemo(
+                    onSendToTraining = { project ->
+                        selectedTrainingProject = project
+                        selectedTab = RootTab.Training
+                    }
+                )
+                RootTab.Training -> SplatTrainingDemo(
+                    initialProject = selectedTrainingProject,
+                    onNavigateToLibrary = { selectedTab = RootTab.Library }
+                )
+                RootTab.Library -> LibraryScreen(
+                    onTrainProject = { project ->
+                        selectedTrainingProject = project
+                        selectedTab = RootTab.Training
+                    }
                 )
                 RootTab.About -> AboutTabContent()
             }
@@ -109,7 +130,9 @@ fun RootScreen(onDemoClick: (String) -> Unit) {
 }
 
 enum class RootTab(@StringRes val labelRes: Int, val icon: ImageVector) {
-    Samples(R.string.tab_samples, Icons.Filled.PlayArrow),
+    Capture(R.string.tab_capture, Icons.Filled.CameraAlt),
+    Training(R.string.tab_training, Icons.Filled.Brush),
+    Library(R.string.tab_library, Icons.Filled.Folder),
     About(R.string.tab_about, Icons.Filled.Info),
 }
 
@@ -140,6 +163,7 @@ private fun AboutTabContent() {
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(scroll)
+            .statusBarsPadding()
             // Bottom padding reserves a gutter for the floating feedback FAB
             // so it does not mask the bottom "Help keep the project free &
             // active" sponsor row on first render (#2194).

@@ -6,4 +6,6 @@
         Scoped to the feedback/ subdirectory only, never the whole cache.
     -->
     <cache-path name="feedback" path="feedback/" />
+    <!-- Trained splat weights stored in filesDir (filesDir/exportName) -->
+    <files-path name="splats" path="." />
 </paths>
