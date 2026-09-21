@@ -1,16 +1,18 @@
 package io.github.sceneview.demo.state
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.net.Uri
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import com.splats.brush.BrushConfig
-import com.splats.brush.BrushEngine
-import com.splats.brush.BrushProgressListener
+import androidx.core.content.ContextCompat
 import io.github.sceneview.demo.service.SplatTrainingService
 import io.github.sceneview.demo.storage.TrainedSplat
 import io.github.sceneview.demo.storage.TrainedSplatStorage
@@ -25,8 +27,12 @@ import java.io.File
  * Retained state holder for Splat Training.
  * Lives across tab switches so training progress, status, and dataset selections
  * are never reset when navigating between tabs.
+ *
+ * Training execution is delegated to [SplatTrainingService] running in an isolated
+ * process (:training), ensuring zero UI stutter and enabling instant cancellation.
  */
 object SplatTrainingStateHolder {
+    private const val TAG = "SplatTrainingState"
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     var datasetUri by mutableStateOf<Uri?>(null)
@@ -49,16 +55,17 @@ object SplatTrainingStateHolder {
     private data class ProgressSample(val iteration: Int, val elapsedMs: Long)
     private val progressSamples = ArrayDeque<ProgressSample>()
 
-    private var listenerRegistered = false
+    private var receiverRegistered = false
 
-    fun initListener(context: Context) {
-        if (listenerRegistered) return
-        listenerRegistered = true
-        var lastNotificationUpdateMs = 0L
+    private val trainingBroadcastReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent?) {
+            when (intent?.action) {
+                SplatTrainingService.BROADCAST_TRAINING_PROGRESS -> {
+                    if (!isTraining) return
+                    val iter = intent.getIntExtra("iteration", 0)
+                    val total = intent.getIntExtra("total", totalIterations)
+                    val elapsedMs = intent.getLongExtra("elapsed_ms", 0L)
 
-        BrushEngine.setProgressListener(object : BrushProgressListener {
-            override fun onProgress(iter: Int, total: Int, elapsedMs: Long) {
-                appScope.launch {
                     currentIteration = iter
                     totalIterations = total
                     trainingElapsedMs = elapsedMs
@@ -88,52 +95,65 @@ object SplatTrainingStateHolder {
                         }
                     }
                 }
-                val now = System.currentTimeMillis()
-                if (now - lastNotificationUpdateMs >= 500L || iter >= total) {
-                    lastNotificationUpdateMs = now
-                    SplatTrainingService.updateProgress(
-                        context = context.applicationContext,
-                        iteration = iter,
-                        total = total,
-                        elapsedMs = elapsedMs,
-                        datasetName = datasetName
-                    )
+                SplatTrainingService.BROADCAST_TRAINING_EVAL -> {
+                    evalPsnr = intent.getFloatExtra("psnr", 0f)
+                    evalSsim = intent.getFloatExtra("ssim", 0f)
                 }
-            }
-
-            override fun onEvalResult(iter: Int, psnr: Float, ssim: Float) {
-                appScope.launch {
-                    evalPsnr = psnr
-                    evalSsim = ssim
-                }
-            }
-
-            override fun onTrainingComplete() {
-                SplatTrainingService.stop(context.applicationContext)
-                appScope.launch {
+                SplatTrainingService.BROADCAST_TRAINING_COMPLETE -> {
                     statusText = "Finished!"
                     isTraining = false
                     trainingCompleted = true
                     estimatedRemainingMs = 0L
                     progressSamples.clear()
-                    val newSplat = TrainedSplat(
-                        id = activeSplatId ?: System.currentTimeMillis().toString(),
-                        datasetName = datasetName ?: "Unknown Dataset",
-                        iterations = totalIterations,
-                        elapsedMs = trainingElapsedMs,
-                        psnr = evalPsnr,
-                        ssim = evalSsim,
-                        status = "Finished!",
-                        exportName = currentExportName,
-                        timestamp = System.currentTimeMillis(),
-                        currentIteration = totalIterations
-                    )
-                    val existing = TrainedSplatStorage.loadTrainedSplats(context.applicationContext)
-                    TrainedSplatStorage.saveTrainedSplats(context.applicationContext, listOf(newSplat) + existing)
+
+                    val export = intent.getStringExtra("export_name") ?: currentExportName
+                    val splatFile = File(context.applicationContext.filesDir, export)
+                    if (splatFile.exists() && splatFile.length() > 0L) {
+                        val newSplat = TrainedSplat(
+                            id = activeSplatId ?: System.currentTimeMillis().toString(),
+                            datasetName = datasetName ?: "Unknown Dataset",
+                            iterations = totalIterations,
+                            elapsedMs = trainingElapsedMs,
+                            psnr = evalPsnr,
+                            ssim = evalSsim,
+                            status = "Finished!",
+                            exportName = export,
+                            timestamp = System.currentTimeMillis(),
+                            currentIteration = totalIterations
+                        )
+                        val existing = TrainedSplatStorage.loadTrainedSplats(context.applicationContext)
+                        TrainedSplatStorage.saveTrainedSplats(context.applicationContext, listOf(newSplat) + existing)
+                    }
+                    activeSplatId = null
+                }
+                SplatTrainingService.BROADCAST_TRAINING_ERROR -> {
+                    val errMsg = intent.getStringExtra("error_message") ?: "Training failed"
+                    Log.e(TAG, "Training error broadcast: $errMsg")
+                    statusText = "Error: $errMsg"
+                    isTraining = false
                     activeSplatId = null
                 }
             }
-        })
+        }
+    }
+
+    fun initListener(context: Context) {
+        if (receiverRegistered) return
+        receiverRegistered = true
+
+        val filter = IntentFilter().apply {
+            addAction(SplatTrainingService.BROADCAST_TRAINING_PROGRESS)
+            addAction(SplatTrainingService.BROADCAST_TRAINING_EVAL)
+            addAction(SplatTrainingService.BROADCAST_TRAINING_COMPLETE)
+            addAction(SplatTrainingService.BROADCAST_TRAINING_ERROR)
+        }
+
+        ContextCompat.registerReceiver(
+            context.applicationContext,
+            trainingBroadcastReceiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
     }
 
     fun startTraining(context: Context) {
@@ -160,13 +180,6 @@ object SplatTrainingStateHolder {
         currentExportName = uniqueExportName
         activeSplatId = timestamp.toString()
 
-        SplatTrainingService.start(context.applicationContext, iters, sanitizedDataset)
-
-        val config = BrushConfig().apply {
-            totalTrainIters = iters
-            exportName = uniqueExportName
-        }
-
         appScope.launch(Dispatchers.Default) {
             try {
                 val tempFile = withContext(Dispatchers.IO) {
@@ -182,7 +195,6 @@ object SplatTrainingStateHolder {
                     cacheFile
                 }
                 if (!tempFile.exists() || tempFile.length() == 0L) {
-                    SplatTrainingService.stop(context.applicationContext)
                     withContext(Dispatchers.Main) {
                         statusText = "Error: Failed to prepare dataset file"
                         isTraining = false
@@ -190,12 +202,21 @@ object SplatTrainingStateHolder {
                     }
                     return@launch
                 }
-                val tempUri = Uri.fromFile(tempFile)
-                BrushEngine.start(context.applicationContext, tempUri, config)
-            } catch (e: Exception) {
-                SplatTrainingService.stop(context.applicationContext)
+
                 withContext(Dispatchers.Main) {
-                    statusText = "Error: ${e.localizedMessage ?: e.message}"
+                    SplatTrainingService.start(
+                        context = context.applicationContext,
+                        totalIterations = iters,
+                        datasetName = sanitizedDataset,
+                        datasetPath = tempFile.absolutePath,
+                        exportName = uniqueExportName,
+                        splatId = activeSplatId ?: timestamp.toString()
+                    )
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "Error starting splat training", t)
+                withContext(Dispatchers.Main) {
+                    statusText = "Error: ${t.localizedMessage ?: t.message ?: t.javaClass.simpleName}"
                     isTraining = false
                     activeSplatId = null
                 }
@@ -206,10 +227,43 @@ object SplatTrainingStateHolder {
     fun cancelTraining(context: Context) {
         isTraining = false
         statusText = "Cancelled"
+        trainingCompleted = false
         estimatedRemainingMs = 0L
         progressSamples.clear()
+
+        // Stops foreground service and forcefully kills isolated :training process
         SplatTrainingService.stop(context.applicationContext)
-        BrushEngine.setProgressListener(null)
-        listenerRegistered = false
+
+        // Clean up partial/incomplete PLY file if generated prematurely
+        val export = currentExportName
+        if (export.isNotEmpty()) {
+            val fileInFiles = File(context.applicationContext.filesDir, export)
+            if (fileInFiles.exists()) {
+                fileInFiles.delete()
+            }
+            val fileInCache = File(context.applicationContext.cacheDir, export)
+            if (fileInCache.exists()) {
+                fileInCache.delete()
+            }
+        }
+
+        // Clean up temporary dataset zip
+        val cacheDataset = File(context.applicationContext.cacheDir, "training_dataset.zip")
+        if (cacheDataset.exists()) {
+            cacheDataset.delete()
+        }
+
+        // Remove any incomplete record matching active training session
+        val currentId = activeSplatId
+        if (currentId != null || export.isNotEmpty()) {
+            val splats = TrainedSplatStorage.loadTrainedSplats(context.applicationContext)
+            val filtered = splats.filterNot { it.id == currentId || it.exportName == export }
+            if (filtered.size != splats.size) {
+                TrainedSplatStorage.saveTrainedSplats(context.applicationContext, filtered)
+            }
+        }
+
+        activeSplatId = null
+        currentExportName = ""
     }
 }

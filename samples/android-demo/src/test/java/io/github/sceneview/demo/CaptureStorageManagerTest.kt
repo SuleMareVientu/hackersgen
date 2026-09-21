@@ -121,4 +121,68 @@ class CaptureStorageManagerTest {
         val historyAfterDelete = CaptureStorageManager.getCaptureProjects(context)
         assertTrue(historyAfterDelete.isEmpty())
     }
+
+    @Test
+    fun `cleanIncompleteSplats prunes unfinished or zero-byte files`() {
+        // Create one valid finished splat with actual file
+        val validFile = File(context.filesDir, "valid_model.ply").apply {
+            writeBytes(byteArrayOf(1, 2, 3, 4, 5))
+        }
+        val validSplat = TrainedSplat(
+            id = "valid-1",
+            datasetName = "ValidScan",
+            iterations = 1000,
+            elapsedMs = 5000L,
+            psnr = 25f,
+            ssim = 0.9f,
+            status = "Finished!",
+            exportName = "valid_model.ply",
+            timestamp = 1000L
+        )
+
+        // Create an incomplete/cancelled splat record with a 0-byte file
+        val emptyFile = File(context.filesDir, "empty_model.ply").apply {
+            writeBytes(byteArrayOf())
+        }
+        val incompleteSplat = TrainedSplat(
+            id = "incomplete-2",
+            datasetName = "CancelledScan",
+            iterations = 1000,
+            elapsedMs = 1000L,
+            psnr = 0f,
+            ssim = 0f,
+            status = "Cancelled",
+            exportName = "empty_model.ply",
+            timestamp = 2000L
+        )
+
+        // Create an incomplete splat record whose file was deleted/never written
+        val missingFileSplat = TrainedSplat(
+            id = "missing-3",
+            datasetName = "MissingScan",
+            iterations = 1000,
+            elapsedMs = 500L,
+            psnr = 0f,
+            ssim = 0f,
+            status = "Training…",
+            exportName = "non_existent.ply",
+            timestamp = 3000L
+        )
+
+        TrainedSplatStorage.saveTrainedSplats(context, listOf(validSplat, incompleteSplat, missingFileSplat))
+        assertEquals(3, TrainedSplatStorage.loadTrainedSplats(context).size)
+
+        // Run cleanup
+        TrainedSplatStorage.cleanIncompleteSplats(context)
+
+        val afterClean = TrainedSplatStorage.loadTrainedSplats(context)
+        assertEquals(1, afterClean.size)
+        assertEquals("valid-1", afterClean[0].id)
+        assertFalse("Empty file should be deleted", emptyFile.exists())
+        assertTrue("Valid file should remain", validFile.exists())
+
+        // Cleanup test file
+        validFile.delete()
+    }
 }
+

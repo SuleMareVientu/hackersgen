@@ -64,4 +64,25 @@ object TrainedSplatStorage {
         if (externalFile.exists()) return externalFile
         return filesDirFile
     }
+
+    /**
+     * Purges any incomplete splat records or dangling zero-byte files from premature cancellations or crashes.
+     */
+    fun cleanIncompleteSplats(context: Context) {
+        val existing = loadTrainedSplats(context)
+        val valid = existing.filter { splat ->
+            val isFinished = splat.status == "Finished!" || splat.status.equals("completed", ignoreCase = true)
+            val file = getSplatFile(context, splat.exportName)
+            isFinished && file.exists() && file.length() > 0L
+        }
+        existing.filterNot { valid.contains(it) }.forEach { incomplete ->
+            val file = getSplatFile(context, incomplete.exportName)
+            if (file.exists()) {
+                file.delete()
+            }
+        }
+        if (valid.size != existing.size) {
+            saveTrainedSplats(context, valid)
+        }
+    }
 }

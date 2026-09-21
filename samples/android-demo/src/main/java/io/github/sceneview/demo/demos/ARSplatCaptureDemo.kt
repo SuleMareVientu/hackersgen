@@ -1422,13 +1422,6 @@ fun ArSplatCaptureDemo(
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.primary
                         )
-                        if (totalFramesToProcess > 0) {
-                            Text(
-                                text = "Processing $processedFrames / $totalFramesToProcess frames",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = Color.LightGray
-                            )
-                        }
                     }
                 }
             }

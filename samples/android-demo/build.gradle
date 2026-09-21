@@ -204,6 +204,9 @@ dependencies {
 
     // Storage Access Framework DocumentFile helper
     implementation 'androidx.documentfile:documentfile:1.0.1'
+
+    // HTTP client for OpenSplat server API
+    implementation libs.okhttp
 }
 
 task downloadXFeatModel {

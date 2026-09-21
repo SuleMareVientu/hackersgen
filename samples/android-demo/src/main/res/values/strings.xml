@@ -141,4 +141,26 @@
     <string name="training_select_from_captures">Select from Captures</string>
     <string name="training_choose_capture_title">Choose Capture Project</string>
     <string name="training_no_captures_available">No captures found. Complete a capture first!</string>
+
+    <!-- Training Tabs & Server Integration -->
+    <string name="training_tab_local">Local</string>
+    <string name="training_tab_server">Server</string>
+    <string name="server_url_label">Server URL</string>
+    <string name="server_connect_test">Test</string>
+    <string name="server_status_checking">Connecting...</string>
+    <string name="server_status_online">Online</string>
+    <string name="server_status_offline">Offline</string>
+    <string name="server_lan_hint">Self-hosted server: ensure phone and PC are on the same Wi-Fi and port 8000 is open in your desktop firewall.</string>
+    <string name="server_upload_source">Upload Source</string>
+    <string name="server_upload_video">Upload MP4 Video</string>
+    <string name="server_upload_dataset">Upload Capture ZIP</string>
+    <string name="server_start_training">Start Training</string>
+    <string name="server_stop_job">Stop</string>
+    <string name="server_delete_job">Delete</string>
+    <string name="server_download_model">Download Model</string>
+    <string name="server_save_to_library">Save to Library</string>
+    <string name="server_export_file">Export File</string>
+    <string name="server_jobs_title">Server Jobs</string>
+    <string name="server_job_logs">Console Logs</string>
 </resources>
+

@@ -58,7 +58,21 @@ class SplatProcessService : Service() {
             }
         }
         job?.cancel()
+        dismissNotification()
         super.onDestroy()
+    }
+
+    private fun dismissNotification() {
+        try {
+            val manager = getSystemService(NotificationManager::class.java)
+            manager?.cancel(NOTIFICATION_ID)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
+        } catch (_: Exception) {}
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -88,12 +102,7 @@ class SplatProcessService : Service() {
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                } else {
-                    @Suppress("DEPRECATION")
-                    stopForeground(true)
-                }
+                dismissNotification()
                 stopSelf()
             }
         }

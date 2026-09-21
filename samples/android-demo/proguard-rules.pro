@@ -16,6 +16,17 @@
 -keep class io.github.sceneview.** { *; }
 -keepclassmembers class io.github.sceneview.** { *; }
 
+# ── Brush Splat Training (JNI & Native Callbacks) ─────────────────────────────
+-keep class com.splats.brush.** { *; }
+-keepclassmembers class com.splats.brush.** { *; }
+-keep interface com.splats.brush.** { *; }
+-dontwarn com.splats.brush.**
+
+# Keep all native methods and their declaring classes
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
+
 # ── Kotlin Coroutines ─────────────────────────────────────────────────────────
 -keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
 -keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
@@ -56,3 +67,12 @@
 -dontwarn javax.lang.model.**
 -dontwarn autovalue.shaded.**
 -dontwarn com.google.auto.value.**
+
+# ── Kotlinx Serialization & OkHttp ──────────────────────────────────────────
+-keepattributes *Annotation*,InnerClasses
+-dontnote kotlinx.serialization.SerializationKt
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-keepclassmembers class * {
+    @kotlinx.serialization.SerialName <fields>;
+}
