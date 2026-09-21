@@ -1,0 +1,1 @@
+# OpenSplat Server App package
